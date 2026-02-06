@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comfyui-autoflow"
+dynamic = ["version"]
+description = "Pure Python automation for ComfyUI: convert workflows, submit jobs, fetch images—no GUI required"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.7"
+authors = [
+    { name = "chris" }
+]
+keywords = [
+    "comfyui",
+    "automation",
+    "workflow",
+    "workflow.json",
+    "workflow-api",
+    "workflow-api.json",
+    "stable-diffusion",
+    "image-generation",
+    "nodes",
+    "renderables",
+    "flow",
+    "apiflow",
+    "pipeline",
+    "ml",
+    "ai",
+    "api",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[project.optional-dependencies]
+pillow = ["pillow"]
+
+[project.urls]
+Homepage = "https://github.com/chrisdreid/comfyui-autoflow"
+Documentation = "https://github.com/chrisdreid/comfyui-autoflow#readme"
+Repository = "https://github.com/chrisdreid/comfyui-autoflow"
+Issues = "https://github.com/chrisdreid/comfyui-autoflow/issues"
+
+[project.scripts]
+autoflow = "autoflow.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "autoflow.version.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["autoflow*"]
+

@@ -1,0 +1,1035 @@
+"""autoflow.flowtree
+
+Experimental navigation-first wrappers (non-dict subclasses).
+
+This module is intentionally not documented publicly; it is selected via the internal env switch:
+  AUTOFLOW_MODEL_LAYER=flowtree
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Iterator, MutableMapping
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+from functools import wraps
+
+from . import models as _legacy
+from .convert import normalize_server_url, WorkflowConverterError, resolve_object_info_with_origin
+from .defaults import DEFAULT_HTTP_TIMEOUT_S
+from .defaults import (
+    DEFAULT_FETCH_IMAGES,
+    DEFAULT_POLL_INTERVAL_S,
+    DEFAULT_QUEUE_POLL_INTERVAL_S,
+    DEFAULT_SUBMIT_CLIENT_ID,
+    DEFAULT_SUBMIT_WAIT,
+    DEFAULT_WAIT_TIMEOUT_S,
+)
+from .defaults import DEFAULT_JSON_ENSURE_ASCII, DEFAULT_JSON_INDENT
+
+
+def _wrap(v: Any, *, path: str) -> "Tree":
+    return Tree(v, path=path)
+
+
+class Tree:
+    """
+    Terminal-first tree view over any python object (dict/list/scalars), with in-place mutation.
+    """
+
+    __slots__ = ("_v", "_path")
+
+    def __init__(self, v: Any, *, path: str = ""):
+        self._v = v
+        self._path = path
+
+    @property
+    def v(self) -> Any:
+        return self._v
+
+    def path(self) -> str:
+        return self._path
+
+    def unwrap(self) -> Any:
+        return self._v
+
+    def attrs(self) -> List[str]:
+        if isinstance(self._v, dict):
+            return sorted({str(k) for k in self._v.keys()})
+        if isinstance(self._v, list):
+            return [str(i) for i in range(len(self._v))]
+        return []
+
+    def ls(self) -> List[Tuple[str, str]]:
+        """
+        List children as (name, summary) tuples.
+        """
+        out: List[Tuple[str, str]] = []
+        if isinstance(self._v, dict):
+            for k in sorted(self._v.keys(), key=lambda x: str(x)):
+                vv = self._v[k]
+                out.append((str(k), _summary(vv)))
+        elif isinstance(self._v, list):
+            for i, vv in enumerate(self._v):
+                out.append((str(i), _summary(vv)))
+        return out
+
+    def find(self, *, key: Optional[str] = None, value: Any = None, depth: int = 6) -> List["Tree"]:
+        """
+        Very small generic finder:
+        - key only: match any dict key name (depth-first)
+        - key+value: match key with expected value (regex supported if value has .search)
+        """
+        want_key = str(key) if key is not None else None
+
+        def _is_re(x: Any) -> bool:
+            return hasattr(x, "search") and callable(getattr(x, "search"))
+
+        def _match(expected: Any, candidate: Any) -> bool:
+            if expected == "*":
+                return True
+            if _is_re(expected):
+                try:
+                    return bool(expected.search(str(candidate)))
+                except Exception:
+                    return False
+            return expected == candidate
+
+        out: List[Tree] = []
+        stack: List[Tuple[Any, str, int]] = [(self._v, self._path, 0)]
+        seen: set[int] = set()
+        while stack:
+            cur, pth, lvl = stack.pop()
+            try:
+                cid = id(cur)
+                if cid in seen:
+                    continue
+                seen.add(cid)
+            except Exception:
+                pass
+
+            if isinstance(cur, dict):
+                for k, vv in cur.items():
+                    kp = f"{pth}/{k}" if pth else str(k)
+                    if want_key is None or str(k) == want_key:
+                        if value is None:
+                            out.append(Tree(vv, path=kp))
+                        elif _match(value, vv):
+                            out.append(Tree(vv, path=kp))
+                    if lvl < depth and isinstance(vv, (dict, list)):
+                        stack.append((vv, kp, lvl + 1))
+            elif isinstance(cur, list):
+                for i, vv in enumerate(cur):
+                    kp = f"{pth}/{i}" if pth else str(i)
+                    if lvl < depth and isinstance(vv, (dict, list)):
+                        stack.append((vv, kp, lvl + 1))
+        return out
+
+    def __getitem__(self, key: Any) -> "Tree":
+        if isinstance(self._v, dict):
+            vv = self._v[key]
+            kp = f"{self._path}/{key}" if self._path else str(key)
+            return _wrap(vv, path=kp)
+        if isinstance(self._v, list):
+            vv = self._v[int(key)]
+            kp = f"{self._path}/{int(key)}" if self._path else str(int(key))
+            return _wrap(vv, path=kp)
+        raise TypeError("Tree is not indexable (not a dict or list)")
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        if isinstance(self._v, dict):
+            self._v[key] = value
+            return
+        if isinstance(self._v, list):
+            self._v[int(key)] = value
+            return
+        raise TypeError("Tree is not assignable (not a dict or list)")
+
+    def __getattr__(self, name: str) -> "Tree":
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if isinstance(self._v, dict) and name in self._v:
+            return self[name]
+        raise AttributeError(name)
+
+    def __repr__(self) -> str:
+        return f"<Tree path={self._path!r} { _summary(self._v) }>"
+
+
+def _summary(v: Any) -> str:
+    if isinstance(v, dict):
+        keys = list(v.keys())
+        head = ", ".join([repr(str(k)) for k in keys[:4]])
+        more = "" if len(keys) <= 4 else f", +{len(keys)-4}"
+        return f"dict({len(keys)})[{head}{more}]"
+    if isinstance(v, list):
+        return f"list({len(v)})"
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        s = repr(v)
+        return s if len(s) <= 80 else (s[:77] + "...")
+    return type(v).__name__
+
+
+class _MappingWrapper(MutableMapping):
+    """
+    Base mapping wrapper with an attached Tree view.
+    """
+
+    _data: Dict[str, Any]
+
+    def tree(self) -> Tree:
+        return Tree(self._data, path="")
+
+    def unwrap(self) -> Dict[str, Any]:
+        return self._data
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dict(self._data)
+
+    def to_json(self, *, indent: int = DEFAULT_JSON_INDENT, ensure_ascii: bool = DEFAULT_JSON_ENSURE_ASCII) -> str:
+        # Prefer underlying implementation for exact parity (e.g. trailing newline and formatting).
+        tj = getattr(self._data, "to_json", None)
+        if callable(tj):
+            try:
+                return tj(indent=indent, ensure_ascii=ensure_ascii)
+            except TypeError:
+                return tj()
+        return json.dumps(self._data, indent=indent, ensure_ascii=ensure_ascii) + "\n"
+
+    def save(self, output_path: Union[str, Path], *, indent: int = DEFAULT_JSON_INDENT, ensure_ascii: bool = DEFAULT_JSON_ENSURE_ASCII) -> Path:
+        sv = getattr(self._data, "save", None)
+        if callable(sv):
+            try:
+                return sv(output_path, indent=indent, ensure_ascii=ensure_ascii)
+            except TypeError:
+                return sv(output_path)
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(self.to_json(indent=indent, ensure_ascii=ensure_ascii), encoding="utf-8")
+        return p
+
+    # MutableMapping protocol
+    def __getitem__(self, k: Any) -> Any:
+        return self._data[k]
+
+    def __setitem__(self, k: Any, v: Any) -> None:
+        self._data[k] = v
+
+    def __delitem__(self, k: Any) -> None:
+        del self._data[k]
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
+class ApiFlow(_MappingWrapper):
+    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.ApiFlow]] = None, **kwargs: Any):
+        if "server_url" in kwargs:
+            kwargs["server_url"] = normalize_server_url(
+                kwargs.get("server_url"),
+                allow_env=False,
+                allow_none=True,
+            )
+        timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
+        if "object_info" in kwargs:
+            oi_in = kwargs.get("object_info")
+            # Preserve source metadata when caller passes flowtree ObjectInfo.
+            if isinstance(oi_in, ObjectInfo):
+                kwargs["object_info"] = oi_in._oi
+        else:
+            # Auto-resolve from env (and keep env provenance in ObjectInfo.source).
+            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+                None,
+                kwargs.get("server_url"),
+                timeout,
+                allow_env=True,
+                require_source=False,
+            )
+            if oi_dict is not None:
+                oi_obj = _legacy.ObjectInfo(oi_dict)
+                setattr(oi_obj, "_autoflow_origin", origin)
+                s = getattr(oi_obj, "source", None)
+                if isinstance(s, str) and s:
+                    setattr(oi_obj, "_autoflow_source", s)
+                kwargs["object_info"] = oi_obj
+        api = x if isinstance(x, _legacy.ApiFlow) else _legacy.ApiFlow(x, **kwargs)
+        self._api = api
+        self._data = api  # underlying is a dict subclass
+
+    @classmethod
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "ApiFlow":
+        return cls(x, **kwargs)
+
+    @property
+    def object_info(self):
+        return getattr(self._api, "object_info", None)
+
+    @property
+    def use_api(self):
+        return getattr(self._api, "use_api", None)
+
+    @property
+    def workflow_meta(self):
+        return getattr(self._api, "workflow_meta", None)
+
+    @property
+    def source(self):
+        return getattr(self._api, "source", None)
+
+    def find(self, **kwargs: Any):
+        return NodeSet.from_apiflow_find(self, **kwargs)
+
+    def by_id(self, node_id: Union[str, int]) -> "NodeRef":
+        nid = str(node_id)
+        node = self._api.get(nid)
+        if not isinstance(node, dict):
+            raise KeyError(nid)
+        p = _legacy.NodeProxy(node, nid, self._api)
+        object.__setattr__(p, "_autoflow_addr", nid)
+        return NodeRef(p, kind="api", addr=nid, group=None, index=None, dotpath=f'by_id("{nid}")', dictpath=[nid])
+
+    def submit(self, *args: Any, **kwargs: Any):
+        return self._api.submit(*args, **kwargs)
+
+    def execute(
+        self,
+        *,
+        client_id: str = DEFAULT_SUBMIT_CLIENT_ID,
+        extra: Optional[Dict[str, Any]] = None,
+        on_event: Optional[Any] = None,
+        init_extra_nodes: bool = False,
+        cleanup: bool = True,
+    ):
+        """
+        Execute this ApiFlow **serverlessly** (in-process ComfyUI node execution).
+
+        Notes:
+        - This does not call the ComfyUI HTTP API. If you want to run against a server,
+          use `submit(server_url=...)` instead.
+        - This requires ComfyUI to be importable in the current Python environment.
+        """
+        from .inprocess import execute_prompt
+
+        return execute_prompt(
+            dict(self._api),
+            client_id=client_id,
+            extra=extra,
+            on_event=on_event,
+            init_extra_nodes=bool(init_extra_nodes),
+            cleanup=bool(cleanup),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        # NodeSet access by class_type (case-insensitive)
+        want = name.lower()
+        matches: List[Tuple[str, Dict[str, Any]]] = []
+        for nid, n in self._api.items():
+            if isinstance(n, dict) and n.get("class_type", "").lower() == want:
+                matches.append((str(nid), n))
+        if not matches:
+            raise AttributeError(f"No nodes with class_type '{name}'")
+        return NodeSet.from_apiflow_group(self, group_name=name, matches=matches)
+
+    def __repr__(self) -> str:
+        return f"<ApiFlow(flowtree) count={len(self._api)}>"
+
+    @property
+    def dag(self):
+        # Delegate to legacy models.ApiFlow implementation
+        return getattr(self._api, "dag")
+
+
+class Flow(_MappingWrapper):
+    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.Flow]] = None, **kwargs: Any):
+        if "server_url" in kwargs:
+            kwargs["server_url"] = normalize_server_url(
+                kwargs.get("server_url"),
+                allow_env=False,
+                allow_none=True,
+            )
+        timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
+        if "object_info" in kwargs:
+            oi_in = kwargs.get("object_info")
+            if isinstance(oi_in, ObjectInfo):
+                kwargs["object_info"] = oi_in._oi
+        else:
+            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+                None,
+                kwargs.get("server_url"),
+                timeout,
+                allow_env=True,
+                require_source=False,
+            )
+            if oi_dict is not None:
+                oi_obj = _legacy.ObjectInfo(oi_dict)
+                setattr(oi_obj, "_autoflow_origin", origin)
+                s = getattr(oi_obj, "source", None)
+                if isinstance(s, str) and s:
+                    setattr(oi_obj, "_autoflow_source", s)
+                kwargs["object_info"] = oi_obj
+        f = x if isinstance(x, _legacy.Flow) else _legacy.Flow(x, **kwargs)
+        self._flow = f
+        self._data = f
+
+    @classmethod
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "Flow":
+        return cls(x, **kwargs)
+
+    @property
+    def nodes(self):
+        return FlowTreeNodesView(self)
+
+    @property
+    def object_info(self):
+        return getattr(self._flow, "object_info", None)
+
+    @property
+    def workflow_meta(self):
+        return getattr(self._flow, "workflow_meta", None)
+
+    @property
+    def source(self):
+        return getattr(self._flow, "source", None)
+
+    def find(self, **kwargs: Any):
+        return self.nodes.find(**kwargs)
+
+    def fetch_object_info(self, *args: Any, **kwargs: Any):
+        return self._flow.fetch_object_info(*args, **kwargs)
+
+    def convert(self, *args: Any, **kwargs: Any) -> ApiFlow:
+        api = self._flow.convert(*args, **kwargs)
+        return ApiFlow(api)
+
+    def convert_with_errors(self, *args: Any, **kwargs: Any):
+        return self._flow.convert_with_errors(*args, **kwargs)
+
+    def submit(self, *args: Any, **kwargs: Any):
+        return self._flow.submit(*args, **kwargs)
+
+    def execute(
+        self,
+        *,
+        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        timeout: int = DEFAULT_HTTP_TIMEOUT_S,
+        include_meta: bool = False,
+        convert_callbacks: Optional[Any] = None,
+        map_callbacks: Optional[Any] = None,
+        client_id: str = DEFAULT_SUBMIT_CLIENT_ID,
+        extra: Optional[Dict[str, Any]] = None,
+        on_event: Optional[Any] = None,
+        init_extra_nodes: bool = False,
+        cleanup: bool = True,
+    ):
+        """
+        Execute this Flow **serverlessly** (in-process ComfyUI node execution).
+
+        This converts the workspace `Flow` to an API payload and then executes the ComfyUI
+        nodes in-process. If you want to run against a running ComfyUI server, use
+        `submit(server_url=...)` instead.
+        """
+        api = self._flow.convert(
+            object_info=object_info,
+            server_url=None,
+            timeout=timeout,
+            include_meta=include_meta,
+            convert_callbacks=convert_callbacks,
+            map_callbacks=map_callbacks,
+        )
+        from .inprocess import execute_prompt
+
+        return execute_prompt(
+            dict(api),
+            client_id=client_id,
+            extra=extra,
+            on_event=on_event,
+            init_extra_nodes=bool(init_extra_nodes),
+            cleanup=bool(cleanup),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._flow, name)
+
+    def __repr__(self) -> str:
+        nodes = self._flow.get("nodes", [])
+        links = self._flow.get("links", [])
+        return f"<Flow(flowtree) nodes={len(nodes) if isinstance(nodes, list) else 0} links={len(links) if isinstance(links, list) else 0}>"
+
+    @property
+    def dag(self):
+        # Delegate to legacy models.Flow implementation
+        return getattr(self._flow, "dag")
+
+
+class ObjectInfo(_MappingWrapper):
+    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.ObjectInfo]] = None, **kwargs: Any):
+        """
+        Create an ObjectInfo wrapper.
+
+        Supported inputs (x or source=):
+        - dict-like object_info
+        - file path to object_info.json
+        - URL to a JSON object_info
+        - "modules" / "from_comfyui_modules" to load from local ComfyUI modules
+        - "fetch" / "server" when server_url (or AUTOFLOW_COMFYUI_SERVER_URL) is available
+
+        Default behavior (when x and source are omitted):
+        - If AUTOFLOW_OBJECT_INFO_SOURCE (or server_url) is set, object_info is auto-resolved.
+        - Otherwise, an empty ObjectInfo is created (no error).
+        """
+        source = kwargs.pop("source", None)
+        server_url = kwargs.pop("server_url", None)
+        timeout = kwargs.pop("timeout", DEFAULT_HTTP_TIMEOUT_S)
+        allow_env = kwargs.pop("allow_env", True)
+
+        # Prefer explicit x over source= for backwards compatibility.
+        inp = x if x is not None else source
+
+        if isinstance(inp, _legacy.ObjectInfo):
+            oi = inp
+        elif inp is not None:
+            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+                inp,
+                server_url,
+                timeout,
+                allow_env=False,
+                require_source=True,
+            )
+            if oi_dict is None:  # pragma: no cover (resolver should raise when require_source=True)
+                raise WorkflowConverterError("Missing object_info source. Pass source= or set AUTOFLOW_OBJECT_INFO_SOURCE.")
+            oi = _legacy.ObjectInfo(oi_dict)
+            setattr(oi, "_autoflow_origin", origin)
+            s = getattr(oi, "source", None)
+            if isinstance(s, str) and s:
+                setattr(oi, "_autoflow_source", s)
+        else:
+            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+                None,
+                server_url,
+                timeout,
+                allow_env=bool(allow_env),
+                require_source=False,
+            )
+            if oi_dict is None:
+                oi = _legacy.ObjectInfo({})
+            else:
+                oi = _legacy.ObjectInfo(oi_dict)
+                setattr(oi, "_autoflow_origin", origin)
+                s = getattr(oi, "source", None)
+                if isinstance(s, str) and s:
+                    setattr(oi, "_autoflow_source", s)
+
+        self._oi = oi
+        self._data = oi
+
+    @classmethod
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "ObjectInfo":
+        return cls(x, **kwargs)
+
+    @classmethod
+    def from_comfyui_modules(cls) -> "ObjectInfo":
+        return cls(_legacy.ObjectInfo.from_comfyui_modules())
+
+    class _DualMethod:
+        """
+        Descriptor that acts like a classmethod when accessed on the class,
+        and like an instance method when accessed on an instance.
+        """
+
+        def __init__(self, class_func, inst_func):
+            self._class_func = class_func
+            self._inst_func = inst_func
+            try:
+                self.__doc__ = getattr(class_func, "__doc__", None)
+            except Exception:
+                pass
+
+        def __get__(self, obj, objtype=None):
+            if obj is None:
+                @wraps(self._class_func)
+                def _bound(*args, **kwargs):
+                    return self._class_func(objtype, *args, **kwargs)
+
+                return _bound
+
+            @wraps(self._inst_func)
+            def _bound(*args, **kwargs):
+                return self._inst_func(obj, *args, **kwargs)
+
+            return _bound
+
+    @staticmethod
+    def _fetch_new(cls, *args: Any, **kwargs: Any) -> "ObjectInfo":
+        """Fetch object_info from server and return a new ObjectInfo."""
+        return cls(_legacy.ObjectInfo.fetch(*args, **kwargs))
+
+    @staticmethod
+    def _fetch_inplace(self, *args: Any, **kwargs: Any) -> "ObjectInfo":
+        """Fetch object_info from server and update this instance in-place."""
+        oi = _legacy.ObjectInfo.fetch(*args, **kwargs)
+        self._oi = oi
+        self._data = oi
+        return self
+
+    fetch = _DualMethod(_fetch_new, _fetch_inplace)
+
+    def find(self, *args: Any, **kwargs: Any):
+        return self._oi.find(*args, **kwargs)
+
+    @property
+    def source(self):
+        return getattr(self._oi, "source", None)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._oi, name)
+
+    def __repr__(self) -> str:
+        return f"<ObjectInfo(flowtree) count={len(self._oi)}>"
+
+
+class Workflow:
+    def __new__(cls, *args: Any, **kwargs: Any):
+        out = _legacy.Workflow(*args, **kwargs)
+        if isinstance(out, _legacy.Flow):
+            return Flow(out)
+        if isinstance(out, _legacy.ApiFlow):
+            return ApiFlow(out)
+        return out
+
+    @classmethod
+    def load(cls, *args: Any, **kwargs: Any):
+        return cls(*args, **kwargs)
+
+
+__all__ = ["Tree", "Flow", "ApiFlow", "ObjectInfo", "Workflow"]
+
+
+# ---------------------------------------------------------------------------
+# FlowTree-native navigation types
+# ---------------------------------------------------------------------------
+
+
+class _CallableStr(str):
+    def __call__(self) -> str:
+        return str(self)
+
+
+class _CallableList(list):
+    def __call__(self):
+        return self
+
+
+class NodeRef:
+    """
+    Wrap a single legacy proxy (FlowNodeProxy or NodeProxy) and provide path metadata.
+    """
+
+    __slots__ = ("_p", "kind", "addr", "group", "index", "path", "where", "dictpath")
+
+    def __init__(
+        self,
+        proxy: Any,
+        *,
+        kind: str,
+        addr: str,
+        group: Optional[str],
+        index: Optional[int],
+        dotpath: str,
+        dictpath: List[Any],
+    ):
+        object.__setattr__(self, "_p", proxy)
+        self.kind = kind
+        self.addr = addr
+        self.group = group
+        self.index = index
+        # Legacy-compatible identity path (node id / address).
+        self.path = _CallableStr(str(addr))
+        # Human-friendly navigation path (used for printing / terminal UX).
+        self.where = _CallableStr(dotpath)
+        self.dictpath = _CallableList(dictpath)
+
+    def _data_ref(self) -> Dict[str, Any]:
+        """
+        Return a best-effort *live* dict reference for this node.
+        """
+        try:
+            gd = getattr(self._p, "_get_data", None)
+            if callable(gd):
+                d = gd()
+                if isinstance(d, dict):
+                    return d
+        except Exception:
+            pass
+        if isinstance(self._p, dict):
+            return self._p
+        # Fallback may be a copy; prefer callers to use proxy attribute access.
+        return self.unwrap()
+
+    def unwrap(self) -> Dict[str, Any]:
+        if hasattr(self._p, "to_dict"):
+            return self._p.to_dict()
+        return dict(self._p)
+
+    @property
+    def type(self) -> str:
+        """
+        Unified node type accessor:
+        - Flow node: workspace `type`
+        - Api node: `class_type`
+        """
+        try:
+            if self.kind == "flow":
+                return str(getattr(self._p, "type"))
+            if self.kind == "api":
+                return str(getattr(self._p, "class_type"))
+        except Exception:
+            pass
+        d = self.unwrap()
+        if self.kind == "api":
+            return str(d.get("class_type", ""))
+        return str(d.get("type", ""))
+
+    @property
+    def title(self) -> str:
+        """
+        Best-effort node display name/title.
+        """
+        d = self.unwrap()
+        if self.kind == "api":
+            m = d.get("_meta")
+            if isinstance(m, dict) and isinstance(m.get("title"), str):
+                return m.get("title") or ""
+            return ""
+        # workspace
+        t1 = d.get("title")
+        if isinstance(t1, str) and t1:
+            return t1
+        props = d.get("properties")
+        if isinstance(props, dict):
+            t2 = props.get("Node name for S&R")
+            if isinstance(t2, str) and t2:
+                return t2
+        return ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return self.unwrap()
+
+    def attrs(self) -> List[str]:
+        if hasattr(self._p, "attrs"):
+            try:
+                return list(self._p.attrs())
+            except Exception:
+                pass
+        # fallback: raw keys
+        d = self.unwrap()
+        return sorted({str(k) for k in d.keys()})
+
+    def tree(self) -> Tree:
+        return Tree(self.unwrap(), path=self.where)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("_meta", "meta"):
+            d = self._data_ref()
+            m = d.get("_meta")
+            if not isinstance(m, dict):
+                m = {}
+                d["_meta"] = m
+            return _legacy.DictView(m)
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._p, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ("_p", "kind", "addr", "group", "index", "path", "where", "dictpath"):
+            return object.__setattr__(self, name, value)
+        return setattr(self._p, name, value)
+
+    # mapping protocol (so dict(node) works)
+    def __len__(self) -> int:
+        try:
+            return len(self._p)
+        except Exception:
+            return len(self.unwrap())
+
+    def __iter__(self):
+        try:
+            return iter(self._p)
+        except Exception:
+            return iter(self.unwrap())
+
+    def __getitem__(self, key):
+        try:
+            return self._p[key]
+        except Exception:
+            return self.unwrap()[key]
+
+    def __dir__(self) -> List[str]:
+        base = set(super().__dir__())
+        try:
+            base.update(self.attrs())
+        except Exception:
+            pass
+        return sorted(base)
+
+    def __repr__(self) -> str:
+        t = self.type
+        title = self.title
+        bits = [f"{self.kind}", f"id={self.addr!r}"]
+        if t:
+            bits.append(f"type={t!r}")
+        if title:
+            bits.append(f"title={title!r}")
+        bits.append(f"where={self.where!r}")
+        return "<NodeRef " + " ".join(bits) + ">"
+
+
+class NodeSet:
+    """
+    A set/selection of nodes.
+
+    - assignment sets on first node
+    - .set() sets on all nodes
+    """
+
+    __slots__ = ("_nodes", "_kind", "_set_path", "_set_dictpath")
+
+    def __init__(self, nodes: List[NodeRef], *, kind: str, set_path: str, set_dictpath: List[Any]):
+        self._nodes = nodes
+        self._kind = kind
+        self._set_path = set_path
+        self._set_dictpath = set_dictpath
+
+    def __len__(self) -> int:
+        return len(self._nodes)
+
+    def __iter__(self) -> Iterator[NodeRef]:
+        return iter(self._nodes)
+
+    def __getitem__(self, idx: int) -> NodeRef:
+        return self._nodes[idx]
+
+    def first(self) -> NodeRef:
+        if not self._nodes:
+            raise IndexError("NodeSet is empty")
+        return self._nodes[0]
+
+    def attrs(self, *, mode: str = "union") -> List[str]:
+        if not self._nodes:
+            return []
+        if mode not in ("union", "intersection"):
+            raise ValueError("mode must be 'union' or 'intersection'")
+        sets = [set(n.attrs()) for n in self._nodes]
+        if mode == "intersection":
+            out = set.intersection(*sets) if sets else set()
+        else:
+            out = set.union(*sets) if sets else set()
+        return sorted(out)
+
+    def paths(self) -> List[str]:
+        return [n.where for n in self._nodes]
+
+    def dictpaths(self) -> List[List[Any]]:
+        return [list(n.dictpath) for n in self._nodes]
+
+    def to_list(self) -> List[NodeRef]:
+        return list(self._nodes)
+
+    def to_dict(self) -> Dict[str, NodeRef]:
+        return {str(n.addr): n for n in self._nodes}
+
+    def set(self, **kwargs: Any) -> "NodeSet":
+        for n in self._nodes:
+            for k, v in kwargs.items():
+                setattr(n, k, v)
+        return self
+
+    def apply(self, fn) -> "NodeSet":
+        for n in self._nodes:
+            fn(n)
+        return self
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self.first(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ("_nodes", "_kind", "_set_path", "_set_dictpath"):
+            return object.__setattr__(self, name, value)
+        # assignment targets the first node only
+        setattr(self.first(), name, value)
+
+    def __dir__(self) -> List[str]:
+        base = set(super().__dir__())
+        try:
+            base.update(self.attrs())
+        except Exception:
+            pass
+        return sorted(base)
+
+    def __repr__(self) -> str:
+        return f"<NodeSet kind={self._kind!r} count={len(self._nodes)} path={self._set_path!r}>"
+
+    @staticmethod
+    def from_apiflow_group(api: ApiFlow, *, group_name: str, matches: List[Tuple[str, Dict[str, Any]]]) -> "NodeSet":
+        nodes: List[NodeRef] = []
+        for i, (nid, node) in enumerate(matches):
+            p = _legacy.NodeProxy(node, nid, api._api)
+            object.__setattr__(p, "_autoflow_addr", nid)
+            dot = f"{group_name}[{i}]"
+            nodes.append(NodeRef(p, kind="api", addr=nid, group=group_name, index=i, dotpath=dot, dictpath=[nid]))
+        return NodeSet(nodes, kind="api", set_path=group_name, set_dictpath=[group_name])
+
+    @staticmethod
+    def from_apiflow_find(api: ApiFlow, **kwargs: Any) -> "NodeSet":
+        out = api._api.find(**kwargs)
+        nodes: List[NodeRef] = []
+        for i, p in enumerate(out):
+            addr = p.path()
+            nodes.append(NodeRef(p, kind="api", addr=addr, group=None, index=i, dotpath=f'by_id("{addr}")', dictpath=[addr]))
+        return NodeSet(nodes, kind="api", set_path="find(...)", set_dictpath=["find(...)"])
+
+    @staticmethod
+    def from_flow_find(flow: Flow, proxies: List[Any], *, set_path: str) -> "NodeSet":
+        nodes: List[NodeRef] = []
+        top_nodes = flow._flow.get("nodes", [])
+        for i, p in enumerate(proxies):
+            addr = p.path()
+            dictpath: List[Any]
+            dot: str
+            # best-effort top-level index mapping
+            idx = None
+            if isinstance(top_nodes, list):
+                try:
+                    idx = top_nodes.index(p.node)  # type: ignore[attr-defined]
+                except Exception:
+                    idx = None
+            if idx is not None:
+                dictpath = ["nodes", idx]
+                dot = f"nodes[{idx}]"
+            else:
+                dictpath = ["nodes_by_path", addr]
+                dot = f'nodes.by_path("{addr}")'
+            nodes.append(NodeRef(p, kind="flow", addr=addr, group=None, index=i, dotpath=dot, dictpath=dictpath))
+        return NodeSet(nodes, kind="flow", set_path=set_path, set_dictpath=[set_path])
+
+
+class FlowTreeNodesView:
+    __slots__ = ("_flowtree",)
+
+    def __init__(self, flowtree: Flow):
+        self._flowtree = flowtree
+
+    def __dir__(self) -> List[str]:
+        base = set(super().__dir__())
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if isinstance(nodes, list):
+            for n in nodes:
+                if isinstance(n, dict):
+                    t = n.get("type")
+                    if isinstance(t, str) and t:
+                        base.add(t)
+        return sorted(base)
+
+    def to_list(self) -> List[NodeRef]:
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if not isinstance(nodes, list):
+            return []
+        return [self[i] for i in range(len(nodes))]
+
+    def to_dict(self) -> Dict[str, NodeRef]:
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if not isinstance(nodes, list):
+            return {}
+        out: Dict[str, NodeRef] = {}
+        for i, n in enumerate(nodes):
+            if not isinstance(n, dict):
+                continue
+            nid = str(n.get("id", i))
+            out[nid] = self[i]
+        return out
+
+    def __getattr__(self, name: str) -> NodeSet:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        matches: List[Tuple[int, Dict[str, Any]]] = []
+        if isinstance(nodes, list):
+            for idx, n in enumerate(nodes):
+                if isinstance(n, dict) and n.get("type", "").lower() == name.lower():
+                    matches.append((idx, n))
+        if not matches:
+            raise AttributeError(f"No nodes with type '{name}'")
+        refs: List[NodeRef] = []
+        for i, (idx, n) in enumerate(matches):
+            p = _legacy.FlowNodeProxy(n, idx, flow)
+            object.__setattr__(p, "_autoflow_addr", str(n.get("id", idx)))
+            refs.append(
+                NodeRef(
+                    p,
+                    kind="flow",
+                    addr=str(n.get("id", idx)),
+                    group=name,
+                    index=i,
+                    dotpath=f"nodes.{name}[{i}]",
+                    dictpath=["nodes", idx],
+                )
+            )
+        return NodeSet(refs, kind="flow", set_path=f"nodes.{name}", set_dictpath=["nodes", name])
+
+    def by_path(self, addr: str) -> NodeRef:
+        flow = self._flowtree._flow
+        for node, pth in _legacy._iter_flow_nodes_with_paths(flow, deep=True, max_depth=_legacy.DEFAULT_FIND_MAX_DEPTH):  # type: ignore[attr-defined]
+            if pth == addr:
+                # best-effort list index
+                nodes = flow.get("nodes", [])
+                idx = 0
+                if isinstance(nodes, list):
+                    try:
+                        idx = nodes.index(node)
+                    except Exception:
+                        idx = 0
+                proxy = _legacy.FlowNodeProxy(node, idx, flow)
+                object.__setattr__(proxy, "_autoflow_addr", pth)
+                return NodeRef(proxy, kind="flow", addr=pth, group=None, index=None, dotpath=f'nodes.by_path("{pth}")', dictpath=["nodes_by_path", pth])
+        raise KeyError(addr)
+
+    def find(self, **kwargs: Any) -> NodeSet:
+        # Delegate to legacy find for correctness (including deep/subgraphs/widget map)
+        proxies = self._flowtree._flow.nodes.find(**kwargs)
+        return NodeSet.from_flow_find(self._flowtree, proxies, set_path="nodes.find(...)")
+
+    def __getitem__(self, key: Any) -> NodeRef:
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if isinstance(key, int):
+            if isinstance(nodes, list) and 0 <= key < len(nodes) and isinstance(nodes[key], dict):
+                n = nodes[key]
+                proxy = _legacy.FlowNodeProxy(n, key, flow)
+                object.__setattr__(proxy, "_autoflow_addr", str(n.get("id", key)))
+                return NodeRef(proxy, kind="flow", addr=str(n.get("id", key)), group=None, index=None, dotpath=f"nodes[{key}]", dictpath=["nodes", key])
+            # treat as node id lookup (top-level only)
+            if isinstance(nodes, list):
+                for idx, n in enumerate(nodes):
+                    if isinstance(n, dict) and n.get("id") == key:
+                        proxy = _legacy.FlowNodeProxy(n, idx, flow)
+                        object.__setattr__(proxy, "_autoflow_addr", str(key))
+                        return NodeRef(proxy, kind="flow", addr=str(key), group=None, index=None, dotpath=f"nodes[{key}]", dictpath=["nodes", idx])
+            raise KeyError(key)
+        if isinstance(key, str):
+            # comfy path (supports subgraphs)
+            return self.by_path(key)
+        raise TypeError("nodes[...] expects int index/id or str comfy path")
+
+
+
