@@ -8,40 +8,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-02-18
 
 ### Added
-- `Workflow(...)` — unified entry point: load workspace *or* API payload, auto-convert, optionally submit
-- `ObjectInfo.fetch(...)` / `ObjectInfo.from_comfyui_modules()` — first-class object_info helpers
-- `AUTOFLOW_OBJECT_INFO_SOURCE` env var for automatic object_info resolution
-- `.execute()` serverless rendering (in-process ComfyUI, no HTTP server)
-- `Dag` / `.dag()` graph helpers with `.to_mermaid()` and `.to_dot()` output
-- `ProgressPrinter` with custom format strings and event-type filtering
-- `SubmissionResult.save()` one-call output saving (images + files)
+- `Workflow(...)` — unified entry point that loads workspace *or* API payload, auto-converts, and optionally submits
+- `ObjectInfo.fetch(...)` / `ObjectInfo.from_comfyui_modules()` — first-class object_info helpers with env-driven auto-resolution
+- `AUTOFLOW_OBJECT_INFO_SOURCE` env var (`fetch` / `modules` / `server` / `file`) for automatic object_info resolution
+- `.execute()` serverless rendering — run ComfyUI workflows in-process via `NODE_CLASS_MAPPINGS` (no HTTP server required)
+- `comfyui_available()` public helper for environment detection
+- `Dag` / `.dag()` graph helpers (stdlib-only toposort, `.to_mermaid()`, `.to_dot()`)
+- `ProgressTracker` enriching WebSocket events with `node_current`, `nodes_completed`, `nodes_progress`, timing metrics
+- `ProgressPrinter` improvements: `event_types=[...]` filtering, `raw=True` debug output, custom `format="..."` strings
+- WebSocket idle timeout (default 5 s, configurable via `AUTOFLOW_WS_IDLE_TIMEOUT_S`) with `/history` fallback
+- Cached-node fast path: skip WebSocket when all nodes are cached; DAG-based inference for missing events
+- Optional `/queue` polling (`poll_queue=True`) to report queue state while waiting
+- `SubmissionResult.save()` — one-call output saving (images + files)
+- `SubmissionResult.fetch_files(output_types=...)` — registered-output file fetching via `/history` + `/view`
+- Default-on metadata patching from `workflow["extra"]` into ApiFlow nodes (with per-key operators and opt-out)
 - `force_recompute()` cache-busting helper
 - `map_strings()` / `map_paths()` declarative mapping helpers
 - `chain_callbacks()` for composing progress callbacks
 - Subgraph flattening for nested `definitions.subgraphs`
-- PNG metadata extraction (stdlib-only, no Pillow required)
-- CLI: `--save-files`, `--output-types`, `--filepattern`, `--index-offset` flags
+- CLI: `--submit` mode with `--save-files`, `--output-types`, `--filepattern`, `--index-offset`, `--no-wait`, `--progress-raw`
+- `FEATURES.md` quick-glance page with production-focused hooks
+- `CHANGELOG.md` (this file)
 
 ### Changed
-- Default model layer is now `flowtree` (navigation-first wrappers)
+- Default model layer is now `flowtree` (navigation-first wrappers, promoted from experimental)
+- Conversion node inclusion now driven by `object_info` membership (no hardcoded UI-node skip list)
+- Unified output saving APIs around `output_path` with shared filename templating (`{src_frame}`, `###`, `%0Nd`)
 - `ErrorSeverity` / `ErrorCategory` use `str` mixin for JSON compatibility
 - `api.py` public API cleaned: private `_`-prefixed names replaced with public equivalents
+- Refined DAG toposort API: `Dag.toposort()` returns a `Dag`, added `dag.nodes.toposort()` and `dag.entities.toposort()`
 
-## [1.1.0] - 2026-01-15
+### Removed
+- `api_legacy.py` compatibility shim (merged into modular split)
 
-### Added
-- Flow/ApiFlow polymorphic `.load()` — accepts dict, bytes, JSON string, file path, or PNG
-- Attribute-style node access (`api.ksampler[0].seed = 42`)
-- `.find()` helpers for node search with regex support
-- `DictView` / `ListView` drilling proxies
-- `api_mapping()` callback-first mapping
+---
 
-## [1.0.0] - 2026-01-01
+## [1.1.0] - 2026-02-14
 
 ### Added
-- Initial release
-- Workspace → API payload conversion
+- Polymorphic `.load()` on `Flow`, `ApiFlow`, `ObjectInfo`, and `Workflow` — accepts `dict`, `bytes`, JSON string, file path, or ComfyUI PNG
+- PNG metadata extraction (stdlib-only, no Pillow) — recover workflows from any ComfyUI-exported PNG
+- OOP node access with mutable `DictView` drilling proxies:
+  - `api.ksampler[0].seed = 42` (case-insensitive, indexable, iterable)
+  - `flow.nodes.ksampler[0].type` / `flow.extra.ds.scale`
+  - `obj.KSampler.input.required.seed` / path syntax `obj["KSampler/input/required/seed"]`
+- Schema-aware dot access on Flow nodes via attached `object_info` (drill `widgets_values` by name)
+- `.find(...)` helpers with deep key/value filters, regex support, and `depth=` control
+- `.attrs()` introspection on node proxies (raw keys + schema-derived widget names)
+- `ListView` for attribute drilling into single-item list-of-dicts
+- `.path()` / `.address()` on proxy objects for node addressing
+- `api_mapping()` callback-first mapping with rich context (upstream links, `object_info` param types, typed overwrites)
+- Subgraph-aware conversion (inline/flatten `definitions.subgraphs`, nested supported)
+- CLI: `--submit` with progress output and optional `--save-images` / `--filepattern`
+- Centralized env-driven defaults (args → env → default) for timeouts, polling, depth, client_id
+
+### Changed
+- Bumped version to `1.1.0`
+- Standardized public API argument names: `server_url`, `output_path`, `include_bytes` (breaking, no backward compat)
+- CLI flags standardized: `--input-path`, `--output-path`, `--object-info-path` (short flags unchanged)
+- Removed implicit localhost defaults for server operations (must pass `server_url=` or set env)
+- Removed legacy `FLO2API_*` env var fallback
+- Terminology change: "API prompt" → "API payload" throughout codebase and docs
+
+### Removed
+- Top-level `submit`, `get_images`, `object_info` free-function exports (use object methods instead)
+- Legacy short/alias arguments (`obj=`, `server=`, `meta=`, `output=`)
+
+---
+
+## [1.0.0] - 2026-02-10
+
+### Added
+- Initial public release
+- Strict `Flow` (workspace `workflow.json`) and `ApiFlow` (API payload `workflow-api.json`) dict-subclass types
+- `Workflow` smart-wrapper factory: auto-detects format, converts workspace → `ApiFlow` by default
+- Workspace → API payload conversion with structured error reporting (`ConvertResult`, `ConversionError`)
 - Offline conversion with saved `object_info.json`
 - Online conversion via ComfyUI server `/object_info`
-- Submit API payloads and fetch output images
+- `ApiFlow.submit()` to send API payloads and fetch output images
+- Stdlib WebSocket progress callbacks via `submit(wait=True, on_event=...)`
+- `ProgressPrinter` and `chain_callbacks()` helpers
+- `map_strings()` / `map_paths()` for workflow templating (literal + regex replacements)
+- `force_recompute()` for opt-in cache avoidance
+- Callback-first mapping with workflow-level `extra` passthrough and typed overwrites
 - CLI entrypoint (`python -m autoflow`)
+- Comprehensive documentation: `README.md`, `docs/advanced.md`, `docs/load-vs-convert.md`, `docs/submit-and-images.md`, `docs/object-info-and-env.md`, and more
+- MIT License
+
+---
+
+## [0.x] - 2026-02-05
+
+### Added
+- Project inception as `flow2api`
+- Core conversion engine (workspace → API payload)
+- HTTP helpers (`_http_json`, server URL resolution)
+- Initial README, examples, and example scripts

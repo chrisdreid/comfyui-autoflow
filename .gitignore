@@ -24,6 +24,7 @@ MANIFEST
 # test/debug residuals
 examples/code/_docs_test_out/
 
+RELEASE.md
 # AI agents if used
 .cursor
 .cursorignore
