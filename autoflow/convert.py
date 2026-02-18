@@ -51,7 +51,7 @@ class NodeInfoError(Exception):
     """Custom exception for node information errors."""
 
 
-class ErrorSeverity(Enum):
+class ErrorSeverity(str, Enum):
     """Error severity levels for structured error reporting."""
 
     WARNING = "warning"
@@ -59,7 +59,7 @@ class ErrorSeverity(Enum):
     CRITICAL = "critical"
 
 
-class ErrorCategory(Enum):
+class ErrorCategory(str, Enum):
     """Error categories for better error classification."""
 
     VALIDATION = "validation"
@@ -117,6 +117,12 @@ class ConvertResult:
         self.processed_nodes = processed_nodes
         self.skipped_nodes = skipped_nodes
         self.total_nodes = total_nodes
+
+    def __repr__(self) -> str:
+        return (
+            f"ConvertResult(ok={self.ok}, errors={len(self.errors)}, "
+            f"warnings={len(self.warnings)}, nodes={self.processed_nodes}/{self.total_nodes})"
+        )
 
     @property
     def success(self) -> bool:

@@ -104,7 +104,7 @@ def _submit_impl(
     If wait=True, polls GET /history/<prompt_id>. If on_event is provided, will try to
     stream websocket events first (and fall back to polling if it fails).
     """
-    base = _net._resolve_comfy_server_url(server_url)
+    base = _net.resolve_comfy_server_url(server_url)
 
     object_info = getattr(prompt, "object_info", None) if hasattr(prompt, "object_info") else None
     prompt_dict = _sanitize_api_prompt(dict(prompt), object_info=object_info)
@@ -112,7 +112,7 @@ def _submit_impl(
     if extra:
         payload.update(extra)
 
-    resp = _net._http_json(_net._comfy_url(base, "/prompt"), payload=payload, timeout=timeout, method="POST")
+    resp = _net.http_json(_net.comfy_url(base, "/prompt"), payload=payload, timeout=timeout, method="POST")
     time_submitted = time.time()
 
     if fetch_outputs and not wait:
@@ -196,7 +196,7 @@ def _submit_impl(
                 def _poll_queue_bg() -> None:
                     if not eff_poll_queue:
                         return
-                    q_url = _net._comfy_url(base, "/queue")
+                    q_url = _net.comfy_url(base, "/queue")
                     last_emit = 0.0
                     while not stop_queue.is_set():
                         now = time.time()
@@ -205,7 +205,7 @@ def _submit_impl(
                             continue
                         last_emit = now
                         try:
-                            q = _net._http_json(q_url, payload=None, timeout=timeout, method="GET")
+                            q = _net.http_json(q_url, payload=None, timeout=timeout, method="GET")
                         except Exception:
                             q = None
                         try:
@@ -233,7 +233,7 @@ def _submit_impl(
 
                 ws_q: "_queue.Queue" = _queue.Queue()
                 tr = StdlibWsTransport()
-                history_url_ws = _net._comfy_url(base, f"/history/{prompt_id}")
+                history_url_ws = _net.comfy_url(base, f"/history/{prompt_id}")
 
                 def _ws_worker() -> None:
                     try:
@@ -268,7 +268,7 @@ def _submit_impl(
                     except _queue.Empty:
                         # No WS activity for 1s: check history.
                         try:
-                            h = _net._http_json(history_url_ws, payload=None, timeout=timeout, method="GET")
+                            h = _net.http_json(history_url_ws, payload=None, timeout=timeout, method="GET")
                         except Exception:
                             h = None
                         if isinstance(h, dict) and str(prompt_id) in h and isinstance(h[str(prompt_id)], dict):
@@ -333,11 +333,11 @@ def _submit_impl(
                             # On completion, do a quick final cached-node harvest so the `completed` event reflects cache.
                             if isinstance(ev, dict) and ev.get("type") == "completed":
                                 if len(ev.get("nodes_done", [])) < len(ev.get("nodes_total", [])):
-                                    history_url3 = _net._comfy_url(base, f"/history/{prompt_id}")
+                                    history_url3 = _net.comfy_url(base, f"/history/{prompt_id}")
                                     t0 = time.time()
                                     while time.time() - t0 < 1.5:
                                         try:
-                                            h3 = _net._http_json(history_url3, payload=None, timeout=timeout, method="GET")
+                                            h3 = _net.http_json(history_url3, payload=None, timeout=timeout, method="GET")
                                             if isinstance(h3, dict) and str(prompt_id) in h3 and isinstance(h3[str(prompt_id)], dict):
                                                 st3 = h3[str(prompt_id)].get("status")
                                                 if isinstance(st3, dict):
@@ -394,13 +394,13 @@ def _submit_impl(
         except Exception:
             logger.warning("WebSocket event stream failed; falling back to /history polling.", exc_info=True)
 
-    history_url = _net._comfy_url(base, f"/history/{prompt_id}")
+    history_url = _net.comfy_url(base, f"/history/{prompt_id}")
     deadline = time.time() + max(1, wait_timeout)
     history = history_prefetch
     while time.time() < deadline:
         try:
             if history is None:
-                history = _net._http_json(history_url, payload=None, timeout=timeout, method="GET")
+                history = _net.http_json(history_url, payload=None, timeout=timeout, method="GET")
             if isinstance(history, dict) and prompt_id in history:
                 break
         except Exception:
@@ -477,7 +477,7 @@ class SubmissionResult(dict):
 
     @classmethod
     def from_prompt_id(cls, prompt_id: Union[str, int], server_url: Optional[str] = None) -> "SubmissionResult":
-        base = _net._resolve_comfy_server_url(server_url)
+        base = _net.resolve_comfy_server_url(server_url)
         return cls({"prompt_id": str(prompt_id), "history": None}, server_url=base)
 
     @property
@@ -511,11 +511,11 @@ class SubmissionResult(dict):
 
         history = self.get("history")
         if wait and not isinstance(history, dict):
-            history_url = _net._comfy_url(self._server_url, f"/history/{prompt_id}")
+            history_url = _net.comfy_url(self._server_url, f"/history/{prompt_id}")
             deadline = time.time() + max(1, wait_timeout)
             while time.time() < deadline:
                 try:
-                    history = _net._http_json(history_url, payload=None, timeout=timeout, method="GET")
+                    history = _net.http_json(history_url, payload=None, timeout=timeout, method="GET")
                     if isinstance(history, dict) and prompt_id in history:
                         break
                 except Exception:
@@ -748,7 +748,7 @@ def _fetch_images_from_refs(
         params = urllib.parse.urlencode(
             {"filename": ref["filename"], "subfolder": ref.get("subfolder", ""), "type": ref.get("type", "output")}
         )
-        url = _net._comfy_url(server_url, f"/view?{params}")
+        url = _net.comfy_url(server_url, f"/view?{params}")
 
         try:
             with urllib.request.urlopen(url, timeout=timeout) as resp:
@@ -1050,7 +1050,7 @@ def _fetch_files_from_refs(
         params = urllib.parse.urlencode(
             {"filename": ref["filename"], "subfolder": ref.get("subfolder", ""), "type": ref.get("type", "output")}
         )
-        url = _net._comfy_url(server_url, f"/view?{params}")
+        url = _net.comfy_url(server_url, f"/view?{params}")
 
         try:
             with urllib.request.urlopen(url, timeout=timeout) as resp:

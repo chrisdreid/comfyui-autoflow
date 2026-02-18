@@ -104,15 +104,4 @@ def is_png_path(x: Union[str, Path]) -> bool:
     return p.suffix.lower() == ".png" and p.exists()
 
 
-# ---------------------------------------------------------------------------
-# Backwards-compat aliases for existing api.py private helpers
-# ---------------------------------------------------------------------------
-
-_parse_png_metadata_from_bytes = parse_png_metadata_from_bytes
-_extract_png_comfyui_metadata = extract_png_comfyui_metadata
-_looks_like_json = looks_like_json
-_looks_like_path = looks_like_path
-_is_png_bytes = is_png_bytes
-_is_png_path = is_png_path
-
 

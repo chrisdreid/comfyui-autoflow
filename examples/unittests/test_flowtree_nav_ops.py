@@ -123,8 +123,8 @@ def fake_http_json(url, payload=None, timeout=0, method="POST"):
         return {"prompt_id": "p1"}
     raise AssertionError("Unexpected URL: " + str(url))
 
-old = net_mod._http_json
-net_mod._http_json = fake_http_json
+old = net_mod.http_json
+net_mod.http_json = fake_http_json
 try:
     sub = f.submit(
         server_url="http://example.invalid",
@@ -133,7 +133,7 @@ try:
         fetch_outputs=False,
     )
 finally:
-    net_mod._http_json = old
+    net_mod.http_json = old
 
 print(isinstance(sub, dict), bool(calls), sub.get("prompt_id"), hasattr(sub, "fetch_files"))
 """

@@ -1,3 +1,4 @@
+<!-- Keep version below in sync with autoflow/version.py -->
 ```text
 ComfyUI 
  █████╗ ██╗   ██╗████████╗ ██████╗ ███████╗██╗      ██████╗ ██╗    ██╗

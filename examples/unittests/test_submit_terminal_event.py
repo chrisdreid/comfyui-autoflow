@@ -52,9 +52,9 @@ class TestSubmitTerminalEvent(unittest.TestCase):
             yield ws_mod.WsEvent(type="submitted", data={}, ts=1.0, client_id="autoflow", prompt_id="p1", raw={})
             return
 
-        old_http = net_mod._http_json
+        old_http = net_mod.http_json
         old_stream = ws_mod.stream_comfy_events
-        net_mod._http_json = fake_http_json
+        net_mod.http_json = fake_http_json
         ws_mod.stream_comfy_events = fake_stream_comfy_events
         try:
             api = ApiFlow(
@@ -72,7 +72,7 @@ class TestSubmitTerminalEvent(unittest.TestCase):
                 on_event=on_event,
             )
         finally:
-            net_mod._http_json = old_http
+            net_mod.http_json = old_http
             ws_mod.stream_comfy_events = old_stream
 
         types = [e.get("type") for e in events if isinstance(e, dict)]
