@@ -8,6 +8,7 @@ ComfyUI
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ 
                                                        version: 1.2.0
 ```
+
 ```mermaid
 flowchart LR
   workflowJson["workflow.json"] --> autoflow["autoflow"]
