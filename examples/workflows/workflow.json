@@ -1,22 +1,22 @@
 {
   "id": "2ba0b800-2f13-4f21-b8d6-c6cdb0152cae",
   "revision": 0,
-  "last_node_id": 16,
+  "last_node_id": 17,
   "last_link_id": 9,
   "nodes": [
     {
       "id": 8,
       "type": "VAEDecode",
       "pos": [
-        1171.999919945492,
-        841.9999736955542
+        1171.9999445941316,
+        841.9999577617431
       ],
       "size": [
         252,
         72
       ],
       "flags": {},
-      "order": 9,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -56,15 +56,15 @@
       "id": 9,
       "type": "SaveImage",
       "pos": [
-        1465.9999800894807,
-        205.99999838504837
+        1088.3061050626147,
+        246.09043827292035
       ],
       "size": [
         564,
-        672
+        666
       ],
       "flags": {},
-      "order": 10,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -91,8 +91,8 @@
       "id": 15,
       "type": "MarkdownNote",
       "pos": [
-        482.0000166712118,
-        -82.000010244384
+        1239.8927035193117,
+        39.29033231216475
       ],
       "size": [
         528,
@@ -121,12 +121,12 @@
       "id": 14,
       "type": "MarkdownNote",
       "pos": [
-        1465.9999800894807,
-        938.0000265676399
+        1466.000007185045,
+        937.9999611158
       ],
       "size": [
         564,
-        156
+        126
       ],
       "flags": {},
       "order": 1,
@@ -151,12 +151,12 @@
       "id": 13,
       "type": "MarkdownNote",
       "pos": [
-        613.999992950228,
-        1033.9999937329687
+        613.9999854668836,
+        1033.9999644698569
       ],
       "size": [
         396,
-        180
+        150
       ],
       "flags": {},
       "order": 2,
@@ -181,8 +181,8 @@
       "id": 11,
       "type": "MarkdownNote",
       "pos": [
-        -441.99998869541577,
-        193.99998106269302
+        -441.9999548386103,
+        193.99998341642493
       ],
       "size": [
         480,
@@ -211,8 +211,8 @@
       "id": 4,
       "type": "CheckpointLoaderSimple",
       "pos": [
-        73.99998480505076,
-        241.99998607204665
+        442.30443108674075,
+        316.7582029797263
       ],
       "size": [
         378,
@@ -274,8 +274,8 @@
       "id": 5,
       "type": "EmptyLatentImage",
       "pos": [
-        626.0000531259619,
-        829.9999992265774
+        626.0000261316127,
+        829.9999814897691
       ],
       "size": [
         378,
@@ -315,15 +315,15 @@
       "id": 7,
       "type": "CLIPTextEncode",
       "pos": [
-        493.9999911401886,
-        494.00002844117
+        473.9547580802405,
+        494.00003414332485
       ],
       "size": [
         510.328125,
-        216.71875
+        186.71875
       ],
       "flags": {},
-      "order": 7,
+      "order": 8,
       "mode": 0,
       "inputs": [
         {
@@ -353,7 +353,7 @@
         }
       },
       "widgets_values": [
-        ""
+        " B C D E G H I J K M N P Q R S V X Y Z\nCurves, splines"
       ],
       "color": "#223",
       "bgcolor": "#335"
@@ -362,15 +362,15 @@
       "id": 6,
       "type": "CLIPTextEncode",
       "pos": [
-        495.45974862637274,
-        246.4243402848107
+        479.2298125791571,
+        161.67160071157758
       ],
       "size": [
         507.40625,
-        197.171875
+        167.171875
       ],
       "flags": {},
-      "order": 6,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
@@ -400,7 +400,7 @@
         }
       },
       "widgets_values": [
-        "A scene with robots looking into a camera, Dirty robots, short robots, futuristic robots, old robots, funny robots and text \"Autoflow\", Photoreal, high resolution, \"Auto flow\" 'Auto Flow' 'AUTOFLOW' cinimatic clear words, easily readable"
+        "a sharp dark logo with the word \"autoflow\" in bold clean font, directly below the text is a geometric 3D logo  of glass nodes made of a glowing teal light, minimal flat design,photo realistic, 3d Render, dark background, professional, 4k \n\n text saying \"AUTOFLOW\" \"AutoFlow\", \"autoflow\", \"Auto Flow\", \"AUTO FLOW\"\n"
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -409,15 +409,15 @@
       "id": 3,
       "type": "KSampler",
       "pos": [
-        1046.0000166077211,
-        205.99999838504837
+        686.2412193412713,
+        365.30665385024724
       ],
       "size": [
         378,
-        568.796875
+        538.796875
       ],
       "flags": {},
-      "order": 8,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
@@ -462,13 +462,48 @@
         }
       },
       "widgets_values": [
-        6969,
+        696969,
         "fixed",
         69,
         6.9,
         "euler",
         "normal",
-        0.69
+        1
+      ]
+    },
+    {
+      "id": 17,
+      "type": "SaveImage",
+      "pos": [
+        2042.940161534047,
+        365.25628261755946
+      ],
+      "size": [
+        564,
+        612
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.65",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.5.2",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "Default"
       ]
     }
   ],
@@ -590,10 +625,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 1.1469075819486858,
+      "scale": 0.9478575057427154,
       "offset": [
-        -543.7871111386338,
-        -116.02086148937065
+        26.991223840835882,
+        20.877701630447312
       ]
     },
     "frontendVersion": "1.36.14",
