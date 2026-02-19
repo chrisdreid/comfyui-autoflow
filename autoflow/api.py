@@ -74,14 +74,14 @@ from .defaults import (  # noqa: F401
     DEFAULT_OUTPUT_PATH,
     DEFAULT_SUBMIT_CLIENT_ID,
 )
-from .net import _http_json, _comfy_url, _resolve_comfy_server_url  # noqa: F401
+from .net import http_json, comfy_url, resolve_comfy_server_url  # noqa: F401
 from .pngmeta import (  # noqa: F401
-    _parse_png_metadata_from_bytes,
-    _extract_png_comfyui_metadata,
-    _looks_like_json,
-    _looks_like_path,
-    _is_png_bytes,
-    _is_png_path,
+    parse_png_metadata_from_bytes,
+    extract_png_comfyui_metadata,
+    looks_like_json,
+    looks_like_path,
+    is_png_bytes,
+    is_png_path,
 )
 
 # CLI entrypoint
@@ -126,17 +126,16 @@ __all__ = [
     "save_object_info_to_file",
     "get_widget_input_names",
     "align_widgets_values",
-    # misc historical helpers
-    "_http_json",
-    "_comfy_url",
-    "_resolve_comfy_server_url",
-    "_sanitize_api_prompt",
-    "_parse_png_metadata_from_bytes",
-    "_extract_png_comfyui_metadata",
-    "_looks_like_json",
-    "_looks_like_path",
-    "_is_png_bytes",
-    "_is_png_path",
+    # helpers
+    "http_json",
+    "comfy_url",
+    "resolve_comfy_server_url",
+    "parse_png_metadata_from_bytes",
+    "extract_png_comfyui_metadata",
+    "looks_like_json",
+    "looks_like_path",
+    "is_png_bytes",
+    "is_png_path",
     # cli
     "main",
 ]

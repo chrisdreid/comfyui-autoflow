@@ -72,12 +72,4 @@ def resolve_comfy_server_url(server_url: Optional[str]) -> str:
     raise ValueError("Missing server URL. Pass server_url= or set AUTOFLOW_COMFYUI_SERVER_URL.")
 
 
-# ---------------------------------------------------------------------------
-# Backwards-compat aliases for existing api.py private helpers
-# ---------------------------------------------------------------------------
-
-_comfy_url = comfy_url
-_http_json = http_json
-_resolve_comfy_server_url = resolve_comfy_server_url
-
 

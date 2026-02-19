@@ -35,8 +35,8 @@ class TestFlowSubmitWrapper(unittest.TestCase):
                 return {"prompt_id": "p1"}
             raise AssertionError(f"Unexpected URL in test: {url}")
 
-        old = net_mod._http_json
-        net_mod._http_json = fake_http_json
+        old = net_mod.http_json
+        net_mod.http_json = fake_http_json
         try:
             sub = f.submit(
                 server_url="http://example.invalid",
@@ -45,7 +45,7 @@ class TestFlowSubmitWrapper(unittest.TestCase):
                 fetch_outputs=False,
             )
         finally:
-            net_mod._http_json = old
+            net_mod.http_json = old
 
         self.assertIsInstance(sub, dict)
         self.assertTrue(calls)

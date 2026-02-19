@@ -1,13 +1,13 @@
 """autoflow.model_layer
 
-Internal model-layer selector.
+Model-layer selector.
+
+The default layer is ``flowtree`` — navigation-first wrappers with Tree/DictView
+drilling and polymorphic .load().  The ``models`` layer is the legacy dict-subclass
+implementation.
 
 Controlled by env var:
-  AUTOFLOW_MODEL_LAYER=models|flowtree
-
-Default is "flowtree" (experimental wrapper layer).
-
-NOTE: This is an internal experiment switch; do not document in public docs.
+  AUTOFLOW_MODEL_LAYER=models|flowtree  (default: flowtree)
 """
 
 from __future__ import annotations

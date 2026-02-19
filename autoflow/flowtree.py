@@ -1,9 +1,8 @@
 """autoflow.flowtree
 
-Experimental navigation-first wrappers (non-dict subclasses).
+Navigation-first model wrappers (non-dict subclasses).
 
-This module is intentionally not documented publicly; it is selected via the internal env switch:
-  AUTOFLOW_MODEL_LAYER=flowtree
+This is the default model layer (``AUTOFLOW_MODEL_LAYER=flowtree``).
 """
 
 from __future__ import annotations

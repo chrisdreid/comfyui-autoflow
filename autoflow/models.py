@@ -180,21 +180,7 @@ def _match_str_filter(expected: Any, candidate: Any, *, case_insensitive: bool =
 # ---------------------------------------------------------------------------
 
 
-def _get_subgraph_defs(workflow_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    defs = workflow_data.get("definitions")
-    if not isinstance(defs, dict):
-        return {}
-    subgraphs = defs.get("subgraphs")
-    if not isinstance(subgraphs, list):
-        return {}
-    out: Dict[str, Dict[str, Any]] = {}
-    for sg in subgraphs:
-        if not isinstance(sg, dict):
-            continue
-        sg_id = sg.get("id")
-        if isinstance(sg_id, str) and sg_id:
-            out[sg_id] = sg
-    return out
+from .convert import _get_subgraph_defs  # single source of truth
 
 
 def _iter_flow_nodes_with_paths(

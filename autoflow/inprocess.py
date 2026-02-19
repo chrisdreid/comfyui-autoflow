@@ -338,11 +338,7 @@ def _ensure_promptserver_instance() -> Any:
         return None
 
 
-def _looks_like_comfyui_root(p: Path) -> bool:
-    try:
-        return p.exists() and (p / "nodes.py").is_file() and (p / "comfy").is_dir()
-    except Exception:
-        return False
+from .convert import _looks_like_comfyui_root  # single source of truth
 
 
 def _find_comfyui_root_fs() -> Optional[Path]:
