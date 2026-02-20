@@ -53,7 +53,7 @@ Skip the GUI. `autoflow` handles the backend so you can automate/pipeline your C
 
 ## Requirements
 
-- Python 3.9+ (dict insertion order preserved)
+- Python 3.7+ (dict insertion order preserved)
 - ComfyUI server (optional, for API mode)
 - No additional Python packages required
 
@@ -240,86 +240,6 @@ python -m autoflow --submit --input-path workflow.json --server-url http://local
 ```
 
 - More: [`docs/submit-and-images.md`](docs/submit-and-images.md), [`docs/progress-events.md`](docs/progress-events.md)
-
-## Submit with progress
-
-Stream real-time progress from ComfyUI's WebSocket during rendering.
-
-```mermaid
-flowchart LR
-  apiFlow["ApiFlow"] --> submit["submit(wait=True, on_event=ProgressPrinter())"]
-  submit --> ws["/ws (WebSocket)"]
-  ws --> printer["ProgressPrinter"]
-```
-
-```python
-# api
-from autoflow import Workflow, ProgressPrinter
-
-api = Workflow("workflow.json", object_info="object_info.json")
-res = api.submit(
-    server_url="http://localhost:8188",
-    wait=True,
-    on_event=ProgressPrinter(),
-)
-images = res.fetch_images()
-images.save("outputs/")
-```
-
-Use `chain_callbacks` to combine the built-in printer with your own handler:
-
-```python
-# api
-from autoflow import Workflow, ProgressPrinter, chain_callbacks
-
-def my_handler(event):
-    if event.get("type") == "progress":
-        pct = event["data"]["value"] / event["data"]["max"] * 100
-        print(f"  {pct:.0f}%")
-
-api = Workflow("workflow.json", object_info="object_info.json")
-api.submit(
-    server_url="http://localhost:8188",
-    wait=True,
-    on_event=chain_callbacks(ProgressPrinter(), my_handler),
-)
-```
-
-- More: [`docs/progress-events.md`](docs/progress-events.md)
-
-## Edit nodes before submission
-
-Access nodes by `class_type`, modify inputs, then submit. Changes happen in-place on the `ApiFlow`.
-
-```python
-# api
-from autoflow import Workflow
-
-api = Workflow("workflow.json", object_info="object_info.json")
-
-# --- Attribute-style access (by class_type) ---
-api.ksampler[0].seed = 12345
-api.ksampler[0].cfg = 7.5
-
-# Change the output filename in SaveImage
-api.saveimage[0].filename_prefix = "my_render"
-
-# --- find() for more control ---
-for ks in api.find(class_type="KSampler"):
-    ks.seed = 99999
-    ks.steps = 30
-
-# --- Path-style access ---
-api["ksampler/seed"] = 42             # first KSampler's seed
-api["saveimage/filename_prefix"] = "batch_001"
-
-# Submit the modified workflow
-res = api.submit(server_url="http://localhost:8188", wait=True)
-images = res.fetch_images()
-images.save("outputs/")
-```
-
-- More: [`docs/mapping.md`](docs/mapping.md), [`docs/map-strings-and-paths.md`](docs/map-strings-and-paths.md)
 
 ## Serverless execute (no ComfyUI HTTP server)
 
