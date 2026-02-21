@@ -23,6 +23,8 @@ MANIFEST
 
 # test/debug residuals
 examples/code/_docs_test_out/
+autoflow-test-suite/
+
 
 RELEASE.md
 # AI agents if used
