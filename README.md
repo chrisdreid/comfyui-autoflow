@@ -50,6 +50,7 @@ Skip the GUI. `autoflow` handles the backend so you can automate/pipeline your C
 | **Map** | Patch values across nodes for pipelines (seeds, paths, prompts) |
 | **Extract** | Load workflows from ComfyUI PNG outputs (embedded metadata) |
 | **Stdlib-only** | No dependencies by default; optional Pillow, ImageMagick, ffmpeg |
+| **Widget introspection** | `.choices()`, `.tooltip()`, `.spec()` on any node input — query valid options from `node_info` |
 
 ## Requirements
 
@@ -262,6 +263,8 @@ If you're running inside a ComfyUI environment (repo + venv), you can run workfl
   - `flow.nodes.find(title="NewSubgraphName")[0].path()` — find renamed subgraph instances; prints a stable path like `18:17:3`
   - `flow.extra.ds.scale` — drill into nested dicts with `DictView`
   - `node.properties.models.url` — single-item list-of-dicts drill via `ListView` (otherwise index first)
+  - **Widget-value repr**: `NodeRef`/`NodeSet` display widget values as dicts — `f.nodes.CheckpointLoaderSimple` → `{'nodes.CheckpointLoaderSimple[0]': {'ckpt_name': '...'}}`
+  - **Widget introspection**: `.choices()` returns valid combo options, `.tooltip()` shows help text, `.spec()` gives the raw `node_info` spec
 - **Mapping** (seeds/paths/prompts):
   - typed callback mapping: [`docs/mapping.md`](docs/mapping.md)
   - declarative string/path mapping: [`docs/map-strings-and-paths.md`](docs/map-strings-and-paths.md)

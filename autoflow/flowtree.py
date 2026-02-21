@@ -905,7 +905,18 @@ class NodeSet:
         return sorted(base)
 
     def __repr__(self) -> str:
+        # Show widget dicts for all nodes (consistent with NodeRef.__repr__)
+        combined: Dict[str, Any] = {}
+        for n in self._nodes:
+            w = n._widget_dict()
+            if w:
+                combined[str(n.where)] = w
+        if combined:
+            return repr(combined)
         return f"<NodeSet kind={self._kind!r} count={len(self._nodes)} path={self._set_path!r}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     @staticmethod
     def from_apiflow_group(api: ApiFlow, *, group_name: str, matches: List[Tuple[str, Dict[str, Any]]]) -> "NodeSet":

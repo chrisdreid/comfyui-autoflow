@@ -51,6 +51,10 @@ This page is intentionally short. Each feature links to the relevant docs for de
 - **Dot syntax + find**: Easy node access and edits (inputs, seeds, etc.) with `.find(...)` helpers.  
   - Details: [`README.md`](README.md) (OOP node access), [`docs/convert.md`](docs/convert.md) (subgraph editing)
 
+- **Widget-value repr**: `NodeRef` and `NodeSet` display widget values as dicts — e.g. `f.nodes.CheckpointLoaderSimple` → `{'nodes.CheckpointLoaderSimple[0]': {'ckpt_name': 'sd_xl_base_1.0.safetensors'}}`.
+
+- **Widget introspection**: `.choices()` returns valid combo options, `.tooltip()` shows help text, `.spec()` gives the raw `node_info` spec — all available on any input attribute.
+
 - **Stable addressing**: `.path()` / `.address()` helpers for repeatable targeting (including flattened subgraph-style IDs like `18:17:3`).  
   - Details: [`docs/convert.md`](docs/convert.md)
 
