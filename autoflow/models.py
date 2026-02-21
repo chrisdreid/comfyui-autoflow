@@ -464,7 +464,16 @@ class NodeProxy(_DictMixin):
         node = self._get_data()
         inputs = node.get("inputs", {})
         if isinstance(inputs, dict) and name in inputs:
-            return inputs[name]
+            val = inputs[name]
+            # Wrap in WidgetValue when node_info is available
+            parent = object.__getattribute__(self, "_parent")
+            ni = getattr(parent, "node_info", None)
+            if ni is not None:
+                ct = node.get("class_type", "")
+                spec = _get_input_spec(ct, name, ni)
+                if spec is not None:
+                    return WidgetValue(val, spec)
+            return val
         if name in node:
             return node[name]
         raise AttributeError(f"Node {self.id!r} ({self.class_type}) has no input '{name}'")
@@ -708,6 +717,9 @@ class WidgetValue:
     def spec(self) -> Optional[list]:
         """Return the raw node_info spec for this input."""
         return self._spec
+
+    def __dir__(self) -> List[str]:
+        return ["value", "choices", "tooltip", "spec"]
 
 
 class FlowNodeProxy(_DictMixin):

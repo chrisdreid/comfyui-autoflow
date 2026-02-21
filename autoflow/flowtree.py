@@ -336,8 +336,18 @@ class ApiFlow(_MappingWrapper):
             raise AttributeError(f"No nodes with class_type '{name}'")
         return NodeSet.from_apiflow_group(self, group_name=name, matches=matches)
 
-    def __repr__(self) -> str:
-        # Show grouped nodes with widget dicts
+    def __dir__(self) -> List[str]:
+        base = {"find", "by_id", "submit", "execute", "save", "to_json", "to_dict",
+                "node_info", "dag", "items", "keys", "values"}
+        for _nid, n in self._api.items():
+            if isinstance(n, dict):
+                ct = n.get("class_type")
+                if isinstance(ct, str) and ct:
+                    base.add(ct)
+        return sorted(base)
+
+    def _as_dict(self) -> Dict[str, Any]:
+        """Build {Type[i]: widget_dict} for all nodes."""
         groups: Dict[str, Any] = {}
         type_counts: Dict[str, int] = {}
         for nid, node in self._api.items():
@@ -348,10 +358,21 @@ class ApiFlow(_MappingWrapper):
             type_counts[ct] = i + 1
             key = f"{ct}[{i}]"
             inputs = node.get("inputs", {})
-            # Only show scalar widget values (skip link arrays)
             widgets = {k: v for k, v in inputs.items() if not isinstance(v, list)} if isinstance(inputs, dict) else {}
             groups[key] = widgets
-        return f"ApiFlow({repr(groups)})"
+        return groups
+
+    def items(self) -> list:
+        return list(self._as_dict().items())
+
+    def keys(self) -> list:
+        return list(self._as_dict().keys())
+
+    def values(self) -> list:
+        return list(self._as_dict().values())
+
+    def __repr__(self) -> str:
+        return f"ApiFlow({repr(self._as_dict())})"
 
     @property
     def dag(self):
@@ -800,23 +821,41 @@ class NodeRef:
 
     def __dir__(self) -> List[str]:
         base = {"attrs", "choices", "tooltip", "spec", "tree", "to_dict", "unwrap",
-                "type", "title", "kind", "addr", "group", "index", "path", "where", "dictpath", "meta"}
+                "type", "title", "where", "meta"}
         try:
-            base.update(self.attrs())
+            base.update(self._widget_dict().keys())
         except Exception:
             pass
         return sorted(base)
 
+    def _widget_names(self) -> List[str]:
+        """Return only user-editable widget input names (not links or raw keys)."""
+        try:
+            parent = object.__getattribute__(self._p, "_parent")
+            ni = getattr(parent, "node_info", None)
+            if ni is not None:
+                return list(_legacy.get_widget_input_names(
+                    self.type, node_info=ni, use_api=True
+                ))
+        except Exception:
+            pass
+        # Fallback: inputs that aren't lists (links are [node_id, slot])
+        try:
+            d = self.unwrap()
+            inputs = d.get("inputs") if isinstance(d, dict) else None
+            if isinstance(inputs, dict):
+                return [k for k, v in inputs.items() if not isinstance(v, list)]
+        except Exception:
+            pass
+        return []
+
     def _widget_dict(self) -> Dict[str, Any]:
         """Return a {name: value} dict of widget values, empty if no node_info."""
         try:
-            a = self.attrs()
-            d = self.unwrap()
-            raw_keys = set(d.keys()) if isinstance(d, dict) else set()
-            widget_names = [n for n in a if n not in raw_keys]
-            if not widget_names:
+            names = self._widget_names()
+            if not names:
                 return {}
-            return {n: getattr(self._p, n, None) for n in widget_names}
+            return {n: getattr(self._p, n, None) for n in names}
         except Exception:
             return {}
 
@@ -905,9 +944,11 @@ class NodeSet:
         setattr(self.first(), name, value)
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"set", "apply", "first", "attrs", "find", "items", "keys", "values"}
         try:
-            base.update(self.attrs())
+            # Show only widget names (not link inputs or raw node keys)
+            for n in self._nodes:
+                base.update(n._widget_dict().keys())
         except Exception:
             pass
         return sorted(base)
@@ -973,7 +1014,7 @@ class FlowTreeNodesView:
         self._flowtree = flowtree
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"items", "keys", "values", "to_list", "to_dict", "find", "by_path"}
         flow = self._flowtree._flow
         nodes = flow.get("nodes", [])
         if isinstance(nodes, list):

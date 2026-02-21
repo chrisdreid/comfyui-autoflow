@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `UserWarning` emitted when `Flow` is created without `node_info`, guiding users to set the env var or pass it explicitly
 - `NodeRef.__repr__` shows clean path-keyed widget dict: `{'nodes.KSampler[0]': {'seed': 200, 'steps': 20}}`
 - `NodeRef.__dir__` filtered to show only widgets + useful methods (hides raw JSON noise)
+- Constructor-style `__repr__` on `Flow`, `ApiFlow`, `NodeInfo` — shows class name + inner structure: `Flow(nodes={...}, links=10)`, `ApiFlow({...})`, `NodeInfo(count=N, types=[...])`
+- `ApiFlow.items()` / `.keys()` / `.values()` — dict-like iteration over `{Type[i]: widget_dict}` pairs
+- `FlowTreeNodesView.items()` / `.keys()` / `.values()` — dict-like iteration over `{nodes.Type[i]: widget_dict}` pairs
+- Curated `__dir__` on `ApiFlow`, `NodeSet`, `FlowTreeNodesView`, and `WidgetValue` — tab completion shows only user-facing attributes (node types, widgets, methods)
 
 ### Changed
 - **Renamed `object_info` → `node_info` throughout** (breaking: class `ObjectInfo` → `NodeInfo`, env var `AUTOFLOW_OBJECT_INFO_SOURCE` → `AUTOFLOW_NODE_INFO_SOURCE`, CLI `--object-info-path` → `--node-info-path`, `--download-object-info-path` → `--download-node-info-path`, doc file `object-info-and-env.md` → `node-info-and-env.md`)
