@@ -44,7 +44,7 @@ autoflow includes an idle timeout so a silent websocket does not hang forever:
 # api
 from autoflow import Workflow, ProgressPrinter
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api.submit(server_url="http://localhost:8188", wait=True, on_event=ProgressPrinter())
 ```
 
@@ -73,7 +73,7 @@ from autoflow import Workflow, ProgressPrinter, chain_callbacks
 def my_cb(ev):
     print(ev.get("type"), ev.get("prompt_id"))
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api.submit(
     server_url="http://localhost:8188",
     wait=True,

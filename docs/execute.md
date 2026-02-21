@@ -46,7 +46,7 @@ comfyui_available(verify=True)   # full import check
 ```python
 from autoflow import Flow
 
-flow = Flow("workflow.json", object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
 res = flow.execute()
 print(res.prompt_id)
 ```
@@ -73,7 +73,7 @@ paths using ComfyUI’s `folder_paths` (when available) and reads/copies directl
 ```python
 from autoflow import Flow
 
-flow = Flow("workflow.json", object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
 res = flow.execute()
 
 # Save registered outputs using the same filename template features as submit() results:
@@ -94,7 +94,7 @@ Notes:
 ```python
 from autoflow import Flow, ProgressPrinter
 
-flow = Flow("workflow.json", object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
 flow.execute(on_event=ProgressPrinter())
 ```
 

@@ -14,7 +14,7 @@ import re
 _repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_repo_root))
 
-from autoflow import ApiFlow, Flow, ObjectInfo
+from autoflow import ApiFlow, Flow, NodeInfo
 from examples.unittests._fixtures import fixture_path
 
 
@@ -56,14 +56,14 @@ class TestFlowFindAndPath(unittest.TestCase):
         matches = f.find(name="model", depth=8)
         self.assertTrue(matches)
 
-    def test_find_by_widget_name_when_object_info_present(self):
-        # Workspace nodes store widgets_values as list; with object_info attached, widget names become searchable.
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+    def test_find_by_widget_name_when_node_info_present(self):
+        # Workspace nodes store widgets_values as list; with node_info attached, widget names become searchable.
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         matches = f.find(seed=200, depth=8)
         self.assertTrue(matches)
 
     def test_find_supports_regex_value(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         matches = f.find(seed=re.compile(r"^200$"), depth=8)
         self.assertTrue(matches)
 
@@ -85,9 +85,9 @@ class TestApiFindAndPath(unittest.TestCase):
         self.assertIn("seed", a)
 
 
-class TestObjectInfoFind(unittest.TestCase):
-    def test_object_info_find(self):
-        oi = ObjectInfo.load(fixture_path("object_info.json"))
+class TestNodeInfoFind(unittest.TestCase):
+    def test_node_info_find(self):
+        oi = NodeInfo.load(fixture_path("node_info.json"))
         out = oi.find(class_type="KSampler")
         self.assertTrue(out)
         self.assertEqual(out[0].path(), "KSampler")

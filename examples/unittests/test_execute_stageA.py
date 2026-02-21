@@ -20,12 +20,12 @@ from examples.unittests._fixtures import fixture_path  # noqa: E402
 
 class TestExecuteStageA(unittest.TestCase):
     def test_apiflow_execute_rejects_server_args(self):
-        api = ApiFlow({}, object_info=None)
+        api = ApiFlow({}, node_info=None)
         with self.assertRaises(TypeError):
             api.execute(server_url="http://example.invalid")  # type: ignore[arg-type]
 
     def test_apiflow_execute_calls_inprocess_execute_prompt(self):
-        api = ApiFlow({"1": {"class_type": "KSampler", "inputs": {"seed": 1}}}, object_info=None)
+        api = ApiFlow({"1": {"class_type": "KSampler", "inputs": {"seed": 1}}}, node_info=None)
         calls = []
 
         def fake_execute_prompt(prompt, **kwargs):
@@ -48,7 +48,7 @@ class TestExecuteStageA(unittest.TestCase):
         self.assertEqual(calls[0]["kwargs"].get("cleanup"), False)
 
     def test_flow_execute_converts_then_calls_inprocess_execute_prompt(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=None)
+        f = Flow(fixture_path("FLOW.json"), node_info=None)
         calls = []
 
         def fake_execute_prompt(prompt, **kwargs):
@@ -58,7 +58,7 @@ class TestExecuteStageA(unittest.TestCase):
         old = inprocess_mod.execute_prompt
         inprocess_mod.execute_prompt = fake_execute_prompt  # type: ignore[assignment]
         try:
-            res = f.execute(object_info=fixture_path("object_info.json"), cleanup=True)
+            res = f.execute(node_info=fixture_path("node_info.json"), cleanup=True)
         finally:
             inprocess_mod.execute_prompt = old  # type: ignore[assignment]
 

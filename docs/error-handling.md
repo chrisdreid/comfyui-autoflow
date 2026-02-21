@@ -139,12 +139,12 @@ def handle_api_response(response_data: dict) -> None:
    # ✓ Good
    from autoflow import Flow
    workflow_data = "workflow.json"  # workspace workflow.json path
-   result = Flow.load(workflow_data).convert_with_errors(object_info="object_info.json")
+   result = Flow.load(workflow_data).convert_with_errors(node_info="node_info.json")
    
    # ✗ Avoid (for API endpoints)
    try:
        from autoflow import Workflow
-       data = Workflow(workflow_data, object_info="object_info.json")
+       data = Workflow(workflow_data, node_info="node_info.json")
    except Exception as e:
        # Exception handling
        pass
@@ -310,7 +310,7 @@ async def convert(request: WorkflowRequest):
 @app.post("/convert")
 async def convert(request: WorkflowRequest):
     from autoflow import Flow
-    result = Flow.load(request.workflow_data).convert_with_errors(object_info="object_info.json")
+    result = Flow.load(request.workflow_data).convert_with_errors(node_info="node_info.json")
     
     # Map to appropriate HTTP status
     if not result.success:

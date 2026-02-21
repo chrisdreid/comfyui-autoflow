@@ -16,7 +16,7 @@ _repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_repo_root))
 
 # These parity checks are specifically for the legacy-parity dict-subclass layer.
-from autoflow.models import Flow, ApiFlow, ObjectInfo, Workflow  # noqa: E402
+from autoflow.models import Flow, ApiFlow, NodeInfo, Workflow  # noqa: E402
 from examples.unittests._fixtures import fixture_path
 
 
@@ -24,7 +24,7 @@ class TestLegacyParityModels(unittest.TestCase):
     def test_dict_subclass_identity(self):
         f = Flow.load(fixture_path("FLOW.json"))
         a = ApiFlow.load(fixture_path("default-subgraphx2-api.json"))
-        oi = ObjectInfo.load(fixture_path("object_info.json"))
+        oi = NodeInfo.load(fixture_path("node_info.json"))
 
         self.assertIsInstance(f, dict)
         self.assertIsInstance(a, dict)
@@ -42,7 +42,7 @@ class TestLegacyParityModels(unittest.TestCase):
             self.assertIn(t, d)
 
     def test_flow_node_proxy_widget_drilling_and_dir(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         n = f.nodes.KSampler[0]
         self.assertEqual(n.seed, 200)
         self.assertIn("seed", n.attrs())
@@ -61,7 +61,7 @@ class TestLegacyParityModels(unittest.TestCase):
         self.assertEqual(len(matches2), len(all_nodes))
 
     def test_apiflow_path_get_set(self):
-        api = Workflow(str(fixture_path("FLOW.json")), object_info=fixture_path("object_info.json"))
+        api = Workflow(str(fixture_path("FLOW.json")), node_info=fixture_path("node_info.json"))
         self.assertIsInstance(api, ApiFlow)
 
         # By class_type selector (first matching node).
@@ -78,7 +78,7 @@ class TestLegacyParityModels(unittest.TestCase):
         self.assertEqual(api.ksampler[0].seed, 111)
 
     def test_objectinfo_attr_and_path_drilling(self):
-        oi = ObjectInfo.load(fixture_path("object_info.json"))
+        oi = NodeInfo.load(fixture_path("node_info.json"))
         # attribute access should drill into dicts
         self.assertIn("input", oi.KSampler)
         # path access should work too

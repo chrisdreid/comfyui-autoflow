@@ -295,18 +295,18 @@ def force_recompute(
 
 
 def _get_param_spec(
-    object_info: Optional[Dict[str, Any]],
+    node_info: Optional[Dict[str, Any]],
     class_type: Optional[str],
     param: str,
 ) -> Optional[List[Any]]:
     """
-    Return the raw object_info spec list for a param, e.g. ["INT", {...}] or ["MODEL"].
+    Return the raw node_info spec list for a param, e.g. ["INT", {...}] or ["MODEL"].
     """
-    if not object_info or not isinstance(object_info, dict):
+    if not node_info or not isinstance(node_info, dict):
         return None
     if not class_type or not isinstance(class_type, str):
         return None
-    info = object_info.get(class_type)
+    info = node_info.get(class_type)
     if not isinstance(info, dict):
         return None
     inp = info.get("input")
@@ -326,7 +326,7 @@ def api_mapping(
     flow: Any,
     callbacks: Union[Callable[[Dict[str, Any]], Any], Iterable[Callable[[Dict[str, Any]], Any]]],
     *,
-    object_info: Optional[Dict[str, Any]] = None,
+    node_info: Optional[Dict[str, Any]] = None,
     in_place: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -338,7 +338,7 @@ def api_mapping(
       - meta (node['_meta'] dict or {})
       - workflow_extra (best-effort workflow['extra'] dict, usually attached during convert)
       - upstream_node_id, upstream_slot, upstream_node (when value is a link like ['12', 0])
-      - param_spec, param_type (from object_info if available)
+      - param_spec, param_type (from node_info if available)
 
     Callback return values:
       - None: no change
@@ -361,12 +361,12 @@ def api_mapping(
     out = flow if in_place else copy.deepcopy(flow)
 
     # Prefer attached schema on ApiFlow if present.
-    if object_info is None:
-        object_info = getattr(flow, "object_info", None)
+    if node_info is None:
+        node_info = getattr(flow, "node_info", None)
 
     # Preserve attached attrs when deep-copying dict subclasses.
     if not in_place:
-        for k in ("object_info", "use_api", "workflow_meta"):
+        for k in ("node_info", "use_api", "workflow_meta"):
             if hasattr(flow, k):
                 try:
                     setattr(out, k, getattr(flow, k))
@@ -398,7 +398,7 @@ def api_mapping(
                 upstream_slot = value[1]
                 upstream_node = out.get(upstream_node_id) if upstream_node_id is not None else None
 
-            param_spec = _get_param_spec(object_info, class_type, param)
+            param_spec = _get_param_spec(node_info, class_type, param)
             param_type = None
             if isinstance(param_spec, list) and param_spec and isinstance(param_spec[0], str):
                 param_type = param_spec[0]

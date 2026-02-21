@@ -56,12 +56,12 @@ from .convert import (  # noqa: F401
     align_widgets_values,
     convert,
     convert_workflow_with_errors,
-    fetch_object_info,
-    fetch_object_info_from_url,
+    fetch_node_info,
+    fetch_node_info_from_url,
     get_widget_input_names,
-    load_object_info_from_file,
-    object_info_from_comfyui_modules,
-    resolve_object_info,
+    load_node_info_from_file,
+    node_info_from_comfyui_modules,
+    resolve_node_info,
 )
 
 
@@ -111,20 +111,20 @@ def _collect_key_hits(obj: Any, keys: set, *, depth: int) -> Dict[str, List[Any]
 
 def _flow_widget_map(node: Dict[str, Any], flow: Any, *, _cache: Dict[str, List[str]]) -> Dict[str, Any]:
     """
-    Best-effort: resolve Flow node widgets_values into a {widget_name: value} dict using flow.object_info.
+    Best-effort: resolve Flow node widgets_values into a {widget_name: value} dict using flow.node_info.
     """
-    object_info = getattr(flow, "object_info", None)
-    if not isinstance(object_info, dict):
+    node_info = getattr(flow, "node_info", None)
+    if not isinstance(node_info, dict):
         return {}
     class_type = node.get("type")
     if not isinstance(class_type, str) or not class_type:
         return {}
     widget_names = _cache.get(class_type)
     if widget_names is None:
-        widget_names = get_widget_input_names(class_type, object_info=object_info, use_api=True)
+        widget_names = get_widget_input_names(class_type, node_info=node_info, use_api=True)
         _cache[class_type] = widget_names
     wv0 = node.get("widgets_values", []) or []
-    wv = align_widgets_values(class_type, list(wv0), widget_names, object_info=object_info)
+    wv = align_widgets_values(class_type, list(wv0), widget_names, node_info=node_info)
     out: Dict[str, Any] = {}
     for i in range(min(len(widget_names), len(wv))):
         out[widget_names[i]] = wv[i]
@@ -464,7 +464,16 @@ class NodeProxy(_DictMixin):
         node = self._get_data()
         inputs = node.get("inputs", {})
         if isinstance(inputs, dict) and name in inputs:
-            return inputs[name]
+            val = inputs[name]
+            # Wrap in WidgetValue when node_info is available
+            parent = object.__getattribute__(self, "_parent")
+            ni = getattr(parent, "node_info", None)
+            if ni is not None:
+                ct = node.get("class_type", "")
+                spec = _get_input_spec(ct, name, ni)
+                if spec is not None:
+                    return WidgetValue(val, spec)
+            return val
         if name in node:
             return node[name]
         raise AttributeError(f"Node {self.id!r} ({self.class_type}) has no input '{name}'")
@@ -579,6 +588,140 @@ class NodeGroup:
         return [node for _, node in nodes]
 
 
+# ---------------------------------------------------------------------------
+# WidgetValue — transparent wrapper with .choices() / .tooltip()
+# ---------------------------------------------------------------------------
+
+
+def _get_input_spec(class_type: str, input_name: str, node_info: Optional[Dict[str, Any]]) -> Optional[list]:
+    """Return the raw node_info spec (list) for a given input_name, or None."""
+    if not isinstance(node_info, dict):
+        return None
+    ni = node_info.get(class_type)
+    if not isinstance(ni, dict):
+        return None
+    inputs_def = ni.get("input", {})
+    if not isinstance(inputs_def, dict):
+        return None
+    for section in ("required", "optional"):
+        section_inputs = inputs_def.get(section, {})
+        if isinstance(section_inputs, dict) and input_name in section_inputs:
+            spec = section_inputs[input_name]
+            return spec if isinstance(spec, list) else None
+    return None
+
+
+class WidgetValue:
+    """Transparent wrapper around a widget value, adding `.choices()` and `.tooltip()`.
+
+    Comparison, hashing, and string conversion delegate to the underlying value,
+    so ``node.seed == 200`` still works as expected.
+    """
+
+    __slots__ = ("_value", "_spec")
+
+    def __init__(self, value: Any, spec: Optional[list] = None):
+        object.__setattr__(self, "_value", value)
+        object.__setattr__(self, "_spec", spec)
+
+    # --- transparent delegation ---
+    def __repr__(self) -> str:
+        return repr(self._value)
+
+    def __str__(self) -> str:
+        return str(self._value)
+
+    def __eq__(self, other: Any) -> bool:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value == o
+
+    def __ne__(self, other: Any) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self._value)
+
+    def __bool__(self) -> bool:
+        return bool(self._value)
+
+    def __int__(self) -> int:
+        return int(self._value)
+
+    def __float__(self) -> float:
+        return float(self._value)
+
+    def __add__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value + o
+
+    def __radd__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return o + self._value
+
+    def __mul__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value * o
+
+    def __rmul__(self, other: Any) -> Any:
+        return self.__mul__(other)
+
+    def __sub__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value - o
+
+    def __rsub__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return o - self._value
+
+    def __truediv__(self, other: Any) -> Any:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value / o
+
+    def __lt__(self, other: Any) -> bool:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value < o
+
+    def __le__(self, other: Any) -> bool:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value <= o
+
+    def __gt__(self, other: Any) -> bool:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value > o
+
+    def __ge__(self, other: Any) -> bool:
+        o = other._value if isinstance(other, WidgetValue) else other
+        return self._value >= o
+
+    # --- value access ---
+    @property
+    def value(self) -> Any:
+        """The raw underlying value."""
+        return self._value
+
+    # --- introspection ---
+    def choices(self) -> Optional[List[str]]:
+        """Return the list of valid choices if this is a combo widget, else None."""
+        spec = self._spec
+        if isinstance(spec, list) and len(spec) > 0 and isinstance(spec[0], list):
+            return list(spec[0])
+        return None
+
+    def tooltip(self) -> Optional[str]:
+        """Return the tooltip string for this widget, if one exists."""
+        spec = self._spec
+        if isinstance(spec, list) and len(spec) >= 2 and isinstance(spec[1], dict):
+            return spec[1].get("tooltip")
+        return None
+
+    def spec(self) -> Optional[list]:
+        """Return the raw node_info spec for this input."""
+        return self._spec
+
+    def __dir__(self) -> List[str]:
+        return ["value", "choices", "tooltip", "spec"]
+
+
 class FlowNodeProxy(_DictMixin):
     """Wrap a single workspace node for attribute-style access (schema-aware widgets)."""
 
@@ -619,20 +762,20 @@ class FlowNodeProxy(_DictMixin):
             return val
 
         parent = object.__getattribute__(self, "_parent")
-        object_info = getattr(parent, "object_info", None)
-        if object_info is None:
+        node_info = getattr(parent, "node_info", None)
+        if node_info is None:
             raise NodeInfoError(
                 f"Cannot drill widget '{name}' on Flow node {self.id} ({self.type}). "
-                f"This Flow has no object_info. Attach one via Flow(..., object_info=...), "
-                f"or call flow.fetch_object_info(...)."
+                f"This Flow has no node_info. Attach one via Flow(..., node_info=...), "
+                f"or call flow.fetch_node_info(...)."
             )
 
         try:
-            widget_names = get_widget_input_names(self.type, object_info=object_info, use_api=True)
+            widget_names = get_widget_input_names(self.type, node_info=node_info, use_api=True)
         except NodeInfoError as e:
             raise NodeInfoError(f"Cannot resolve widgets for Flow node {self.id} ({self.type}): {e}") from None
 
-        wv = align_widgets_values(self.type, list(self.widgets_values or []), widget_names, object_info=object_info)
+        wv = align_widgets_values(self.type, list(self.widgets_values or []), widget_names, node_info=node_info)
         widget_map = {k: wv[i] for i, k in enumerate(widget_names) if i < len(wv)}
         if name in widget_map:
             val = widget_map[name]
@@ -640,7 +783,8 @@ class FlowNodeProxy(_DictMixin):
                 return DictView(val)
             if isinstance(val, list) and not isinstance(val, ListView):
                 return ListView(val)
-            return val
+            spec = _get_input_spec(self.type, name, node_info)
+            return WidgetValue(val, spec)
 
         raise AttributeError(
             f"Node {self.id} ({self.type}) has no attribute or widget '{name}'. "
@@ -657,9 +801,9 @@ class FlowNodeProxy(_DictMixin):
             pass
         try:
             parent = object.__getattribute__(self, "_parent")
-            object_info = getattr(parent, "object_info", None)
-            if object_info is not None:
-                widget_names = get_widget_input_names(self.type, object_info=object_info, use_api=True)
+            node_info = getattr(parent, "node_info", None)
+            if node_info is not None:
+                widget_names = get_widget_input_names(self.type, node_info=node_info, use_api=True)
                 base.update(widget_names)
         except Exception:
             pass
@@ -672,9 +816,9 @@ class FlowNodeProxy(_DictMixin):
             keys |= {str(k) for k in node.keys()}
         try:
             parent = object.__getattribute__(self, "_parent")
-            object_info = getattr(parent, "object_info", None)
-            if isinstance(object_info, dict):
-                keys |= set(get_widget_input_names(self.type, object_info=object_info, use_api=True))
+            node_info = getattr(parent, "node_info", None)
+            if isinstance(node_info, dict):
+                keys |= set(get_widget_input_names(self.type, node_info=node_info, use_api=True))
         except Exception:
             pass
         return sorted(keys)
@@ -686,16 +830,16 @@ class FlowNodeProxy(_DictMixin):
 
         node = self._get_data()
         parent = object.__getattribute__(self, "_parent")
-        object_info = getattr(parent, "object_info", None)
-        if isinstance(object_info, dict):
+        node_info = getattr(parent, "node_info", None)
+        if isinstance(node_info, dict):
             try:
-                widget_names = get_widget_input_names(self.type, object_info=object_info, use_api=True)
+                widget_names = get_widget_input_names(self.type, node_info=node_info, use_api=True)
             except Exception:
                 widget_names = []
             if widget_names and name in widget_names:
                 wv0 = node.get("widgets_values")
                 wv0_list = wv0 if isinstance(wv0, list) else []
-                aligned = align_widgets_values(self.type, list(wv0_list), widget_names, object_info=object_info)
+                aligned = align_widgets_values(self.type, list(wv0_list), widget_names, node_info=node_info)
                 aligned[widget_names.index(name)] = value
                 node["widgets_values"] = aligned
                 return
@@ -984,7 +1128,7 @@ class ApiFlow(dict):
         *args,
         map_callbacks: Optional[Union[Callable[[Dict[str, Any]], Any], Iterable[Callable[[Dict[str, Any]], Any]]]] = None,
         in_place: bool = False,
-        object_info: Optional[Dict[str, Any]] = None,
+        node_info: Optional[Dict[str, Any]] = None,
         use_api: Optional[bool] = None,
         workflow_meta: Optional[Dict[str, Any]] = None,
         **kwargs,
@@ -1060,46 +1204,46 @@ class ApiFlow(dict):
         if isinstance(src, str) and src:
             object.__setattr__(self, "_autoflow_source", src)
 
-        if object_info is not None and not isinstance(object_info, dict):
-            from .convert import resolve_object_info_with_origin
+        if node_info is not None and not isinstance(node_info, dict):
+            from .convert import resolve_node_info_with_origin
 
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(object_info, None, DEFAULT_HTTP_TIMEOUT_S, allow_env=True)
-            oi_obj = ObjectInfo(oi_dict or {})
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(node_info, None, DEFAULT_HTTP_TIMEOUT_S, allow_env=True)
+            oi_obj = NodeInfo(oi_dict or {})
             setattr(oi_obj, "_autoflow_origin", origin)
             # Cache a stable string source for easy introspection.
             s = oi_obj.source
             if isinstance(s, str) and s:
                 setattr(oi_obj, "_autoflow_source", s)
-            object_info = oi_obj
-        elif object_info is not None and isinstance(object_info, dict) and not isinstance(object_info, ObjectInfo):
-            # Wrap plain dicts so callers can do `api.object_info.source`.
-            oi_obj = ObjectInfo(object_info)
+            node_info = oi_obj
+        elif node_info is not None and isinstance(node_info, dict) and not isinstance(node_info, NodeInfo):
+            # Wrap plain dicts so callers can do `api.node_info.source`.
+            oi_obj = NodeInfo(node_info)
             if not getattr(oi_obj, "_autoflow_source", None):
                 setattr(oi_obj, "_autoflow_source", "dict")
-            object_info = oi_obj
+            node_info = oi_obj
 
-        self.object_info = object_info
+        self.node_info = node_info
         self.use_api = use_api
         self.workflow_meta = workflow_meta
 
         if map_callbacks is not None:
             from .map import api_mapping
 
-            mapped = api_mapping(self, map_callbacks, object_info=object_info, in_place=in_place)
+            mapped = api_mapping(self, map_callbacks, node_info=node_info, in_place=in_place)
             if mapped is not self:
                 self.clear()
                 self.update(mapped)
 
     def copy(self) -> "ApiFlow":  # noqa: A003
-        return ApiFlow(dict(self), object_info=self.object_info, use_api=self.use_api, workflow_meta=self.workflow_meta)
+        return ApiFlow(dict(self), node_info=self.node_info, use_api=self.use_api, workflow_meta=self.workflow_meta)
 
     @property
     def source(self) -> Optional[str]:
         return getattr(self, "_autoflow_source", None)
 
     @property
-    def object_info_origin(self):
-        oi = getattr(self, "object_info", None)
+    def node_info_origin(self):
+        oi = getattr(self, "node_info", None)
         return getattr(oi, "origin", None) or getattr(oi, "_autoflow_origin", None)
 
     @property
@@ -1334,7 +1478,7 @@ class ApiFlow(dict):
         *,
         map_callbacks: Optional[Union[Callable[[Dict[str, Any]], Any], Iterable[Callable[[Dict[str, Any]], Any]]]] = None,
         in_place: bool = False,
-        object_info: Optional[Dict[str, Any]] = None,
+        node_info: Optional[Dict[str, Any]] = None,
         use_api: Optional[bool] = None,
         workflow_meta: Optional[Dict[str, Any]] = None,
     ) -> "ApiFlow":
@@ -1342,7 +1486,7 @@ class ApiFlow(dict):
             x,
             map_callbacks=map_callbacks,
             in_place=in_place,
-            object_info=object_info,
+            node_info=node_info,
             use_api=use_api,
             workflow_meta=workflow_meta,
         )
@@ -1401,7 +1545,7 @@ class Flow(dict):
         x: Optional[Union[str, Path, bytes, Dict[str, Any]]] = None,
         *args,
         workflow_meta: Optional[Dict[str, Any]] = None,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         fetch_oi: bool = False,
@@ -1479,56 +1623,56 @@ class Flow(dict):
             if workflow_meta is not None:
                 self.workflow_meta = workflow_meta
 
-            if object_info is not None:
-                from .convert import resolve_object_info_with_origin
+            if node_info is not None:
+                from .convert import resolve_node_info_with_origin
 
-                oi_dict, _use_api, origin = resolve_object_info_with_origin(object_info, None, timeout, allow_env=True)
-                oi_obj = ObjectInfo(oi_dict or {})
+                oi_dict, _use_api, origin = resolve_node_info_with_origin(node_info, None, timeout, allow_env=True)
+                oi_obj = NodeInfo(oi_dict or {})
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = oi_obj.source
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
-                self.object_info = oi_obj
+                self.node_info = oi_obj
             elif fetch_oi:
                 effective = server_url or os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL")
                 if not effective:
                     raise ValueError("fetch_oi=True requires server_url= (or env AUTOFLOW_COMFYUI_SERVER_URL).")
-                oi_obj = ObjectInfo(fetch_object_info(effective, timeout=timeout))
-                from .origin import ObjectInfoOrigin
+                oi_obj = NodeInfo(fetch_node_info(effective, timeout=timeout))
+                from .origin import NodeInfoOrigin
 
-                setattr(oi_obj, "_autoflow_origin", ObjectInfoOrigin(requested="fetch_oi", resolved="server", effective_server_url=effective))
+                setattr(oi_obj, "_autoflow_origin", NodeInfoOrigin(requested="fetch_oi", resolved="server", effective_server_url=effective))
                 setattr(oi_obj, "_autoflow_source", f"server:{effective}")
-                self.object_info = oi_obj
+                self.node_info = oi_obj
             else:
-                self.object_info = None
+                self.node_info = None
             return
 
         super().__init__(x if x is not None else {}, *args, **kwargs)
         if isinstance(src, str) and src:
             object.__setattr__(self, "_autoflow_source", src)
         self.workflow_meta = workflow_meta
-        if object_info is not None:
-            from .convert import resolve_object_info_with_origin
+        if node_info is not None:
+            from .convert import resolve_node_info_with_origin
 
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(object_info, None, timeout, allow_env=True)
-            oi_obj = ObjectInfo(oi_dict or {})
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(node_info, None, timeout, allow_env=True)
+            oi_obj = NodeInfo(oi_dict or {})
             setattr(oi_obj, "_autoflow_origin", origin)
             s = oi_obj.source
             if isinstance(s, str) and s:
                 setattr(oi_obj, "_autoflow_source", s)
-            self.object_info = oi_obj
+            self.node_info = oi_obj
         elif fetch_oi:
             effective = server_url or os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL")
             if not effective:
                 raise ValueError("fetch_oi=True requires server_url= (or env AUTOFLOW_COMFYUI_SERVER_URL).")
-            oi_obj = ObjectInfo(fetch_object_info(effective, timeout=timeout))
-            from .origin import ObjectInfoOrigin
+            oi_obj = NodeInfo(fetch_node_info(effective, timeout=timeout))
+            from .origin import NodeInfoOrigin
 
-            setattr(oi_obj, "_autoflow_origin", ObjectInfoOrigin(requested="fetch_oi", resolved="server", effective_server_url=effective))
+            setattr(oi_obj, "_autoflow_origin", NodeInfoOrigin(requested="fetch_oi", resolved="server", effective_server_url=effective))
             setattr(oi_obj, "_autoflow_source", f"server:{effective}")
-            self.object_info = oi_obj
+            self.node_info = oi_obj
         else:
-            self.object_info = None
+            self.node_info = None
 
     @classmethod
     def load(cls, x: Union[str, Path, bytes, Dict[str, Any]]) -> "Flow":
@@ -1548,8 +1692,8 @@ class Flow(dict):
         return FlowNodesView(self)
 
     @property
-    def object_info_origin(self):
-        oi = getattr(self, "object_info", None)
+    def node_info_origin(self):
+        oi = getattr(self, "node_info", None)
         return getattr(oi, "origin", None) or getattr(oi, "_autoflow_origin", None)
 
     @property
@@ -1570,7 +1714,7 @@ class Flow(dict):
             return cache
         from .dag import build_flow_dag
 
-        d = build_flow_dag(dict(self), object_info=getattr(self, "object_info", None))
+        d = build_flow_dag(dict(self), node_info=getattr(self, "node_info", None))
         object.__setattr__(self, "_autoflow_dag_cache", d)
         return d
 
@@ -1609,7 +1753,7 @@ class Flow(dict):
 
     def convert(
         self,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1619,26 +1763,26 @@ class Flow(dict):
         disable_autoflow_meta: bool = False,
         apply_autoflow_meta: Optional[bool] = None,  # backwards-compat alias (disable wins)
     ) -> ApiFlow:
-        # Prefer attached object_info (with source metadata) when caller doesn't override.
-        oi_for_convert = object_info if object_info is not None else getattr(self, "object_info", None)
-        if oi_for_convert is not None and not isinstance(oi_for_convert, ObjectInfo):
-            # Wrap plain dicts so callers can introspect `api.object_info.source`.
+        # Prefer attached node_info (with source metadata) when caller doesn't override.
+        oi_for_convert = node_info if node_info is not None else getattr(self, "node_info", None)
+        if oi_for_convert is not None and not isinstance(oi_for_convert, NodeInfo):
+            # Wrap plain dicts so callers can introspect `api.node_info.source`.
             if isinstance(oi_for_convert, dict):
-                oi_obj = ObjectInfo(oi_for_convert)
+                oi_obj = NodeInfo(oi_for_convert)
                 if not getattr(oi_obj, "_autoflow_source", None):
                     setattr(oi_obj, "_autoflow_source", "dict")
                 oi_for_convert = oi_obj
             else:
-                from .convert import resolve_object_info_with_origin
+                from .convert import resolve_node_info_with_origin
 
-                oi_dict, _use_api, origin = resolve_object_info_with_origin(
+                oi_dict, _use_api, origin = resolve_node_info_with_origin(
                     oi_for_convert,
                     server_url,
                     timeout,
                     allow_env=True,
                     require_source=True,
                 )
-                oi_obj = ObjectInfo(oi_dict or {})
+                oi_obj = NodeInfo(oi_dict or {})
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = oi_obj.source
                 if isinstance(s, str) and s:
@@ -1647,7 +1791,7 @@ class Flow(dict):
 
         api = convert(
             self,
-            object_info=oi_for_convert,
+            node_info=oi_for_convert,
             server_url=server_url,
             timeout=timeout,
             include_meta=include_meta,
@@ -1672,7 +1816,7 @@ class Flow(dict):
                     except Exception:
                         pass
                 return mapped
-            out = ApiFlow(mapped, object_info=api.object_info, use_api=api.use_api, workflow_meta=api.workflow_meta)
+            out = ApiFlow(mapped, node_info=api.node_info, use_api=api.use_api, workflow_meta=api.workflow_meta)
             if isinstance(parent_src, str) and parent_src:
                 try:
                     object.__setattr__(out, "_autoflow_source", f"converted_from({parent_src})")
@@ -1681,42 +1825,42 @@ class Flow(dict):
             return out
         return api
 
-    def fetch_object_info(
+    def fetch_node_info(
         self,
-        value: Optional[Union[Dict[str, Any], str, Path, bytes, "ObjectInfo"]] = None,
+        value: Optional[Union[Dict[str, Any], str, Path, bytes, "NodeInfo"]] = None,
         *,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     ) -> Dict[str, Any]:
         if value is not None:
-            from .convert import resolve_object_info_with_origin
+            from .convert import resolve_node_info_with_origin
 
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(value, None, timeout, allow_env=True)
-            oi_obj = ObjectInfo(oi_dict or {})
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(value, None, timeout, allow_env=True)
+            oi_obj = NodeInfo(oi_dict or {})
             setattr(oi_obj, "_autoflow_origin", origin)
             s = oi_obj.source
             if isinstance(s, str) and s:
                 setattr(oi_obj, "_autoflow_source", s)
-            self.object_info = oi_obj
+            self.node_info = oi_obj
             return oi_obj
 
         effective = server_url or os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL")
         if not effective:
             raise ValueError(
                 "Missing server_url. Pass server_url= or set AUTOFLOW_COMFYUI_SERVER_URL, "
-                "or pass a value to fetch_object_info(value=...) to load without a server."
+                "or pass a value to fetch_node_info(value=...) to load without a server."
             )
-        oi_obj = ObjectInfo(fetch_object_info(effective, timeout=timeout))
-        from .origin import ObjectInfoOrigin
+        oi_obj = NodeInfo(fetch_node_info(effective, timeout=timeout))
+        from .origin import NodeInfoOrigin
 
-        setattr(oi_obj, "_autoflow_origin", ObjectInfoOrigin(requested="fetch_object_info", resolved="server", effective_server_url=effective))
+        setattr(oi_obj, "_autoflow_origin", NodeInfoOrigin(requested="fetch_node_info", resolved="server", effective_server_url=effective))
         setattr(oi_obj, "_autoflow_source", f"server:{effective}")
-        self.object_info = oi_obj
+        self.node_info = oi_obj
         return oi_obj
 
     def convert_with_errors(
         self,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1729,7 +1873,7 @@ class Flow(dict):
     ) -> ConvertResult:
         r = convert_workflow_with_errors(
             workflow_data=self,
-            object_info=object_info,
+            node_info=node_info,
             server_url=server_url,
             timeout=timeout,
             include_meta=include_meta,
@@ -1754,14 +1898,14 @@ class Flow(dict):
             from .map import api_mapping
 
             mapped = api_mapping(out.data, map_callbacks, in_place=False)
-            out.data = mapped if isinstance(mapped, ApiFlow) else ApiFlow(mapped, object_info=out.data.object_info, use_api=out.data.use_api, workflow_meta=out.data.workflow_meta)  # type: ignore[attr-defined]
+            out.data = mapped if isinstance(mapped, ApiFlow) else ApiFlow(mapped, node_info=out.data.node_info, use_api=out.data.use_api, workflow_meta=out.data.workflow_meta)  # type: ignore[attr-defined]
         return out
 
     def submit(
         self,
         server_url: Optional[str] = None,
         *,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = DEFAULT_INCLUDE_META,
         convert_callbacks: Optional[Union[Callable[[Dict[str, Any]], Any], Iterable[Callable[[Dict[str, Any]], Any]]]] = None,
@@ -1779,7 +1923,7 @@ class Flow(dict):
         on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         api = self.convert(
-            object_info=object_info,
+            node_info=node_info,
             server_url=server_url,
             timeout=timeout,
             include_meta=include_meta,
@@ -1813,7 +1957,7 @@ class Workflow:
         x: Optional[Union[str, Path, bytes, Dict[str, Any]]] = None,
         *args,
         auto_convert: bool = True,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1828,7 +1972,7 @@ class Workflow:
             raise TypeError("Workflow accepts a single positional arg (x) plus keyword args")
 
         if x is None:
-            return ApiFlow({}, object_info=None, use_api=use_api, workflow_meta=workflow_meta)
+            return ApiFlow({}, node_info=None, use_api=use_api, workflow_meta=workflow_meta)
 
         is_flow = False
         if isinstance(x, dict):
@@ -1849,7 +1993,7 @@ class Workflow:
             if not auto_convert:
                 return Flow(x)
             return Flow(x).convert(
-                object_info=object_info,
+                node_info=node_info,
                 server_url=server_url,
                 timeout=timeout,
                 include_meta=include_meta,
@@ -1861,7 +2005,7 @@ class Workflow:
             x,
             map_callbacks=map_callbacks,
             in_place=in_place,
-            object_info=object_info,
+            node_info=node_info,
             use_api=use_api,
             workflow_meta=workflow_meta,
         )
@@ -1872,7 +2016,7 @@ class Workflow:
         x: Union[str, Path, bytes, Dict[str, Any]],
         *,
         auto_convert: bool = True,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1885,7 +2029,7 @@ class Workflow:
         return cls(
             x,
             auto_convert=auto_convert,
-            object_info=object_info,
+            node_info=node_info,
             server_url=server_url,
             timeout=timeout,
             include_meta=include_meta,
@@ -1897,15 +2041,15 @@ class Workflow:
         )
 
 
-class ObjectInfo(dict):
-    """object_info dict subclass with drilling and find helpers."""
+class NodeInfo(dict):
+    """node_info dict subclass with drilling and find helpers."""
 
     @property
     def source(self) -> Optional[str]:
         """
-        Short string describing where this object_info came from.
+        Short string describing where this node_info came from.
 
-        Examples: "modules", "server:http://localhost:8188", "file:/abs/object_info.json",
+        Examples: "modules", "server:http://localhost:8188", "file:/abs/node_info.json",
         "json-string", "json-bytes", "dict", "env:modules", ...
         """
         v = getattr(self, "_autoflow_source", None)
@@ -1950,19 +2094,19 @@ class ObjectInfo(dict):
         """
         Best-effort origin metadata (if available).
 
-        When ObjectInfo is created via autoflow's resolvers/fetch helpers, this is set to an
-        `ObjectInfoOrigin` instance. For manually constructed dicts, this may be missing/None.
+        When NodeInfo is created via autoflow's resolvers/fetch helpers, this is set to an
+        `NodeInfoOrigin` instance. For manually constructed dicts, this may be missing/None.
         """
         return getattr(self, "_autoflow_origin", None)
 
     @classmethod
-    def from_comfyui_modules(cls) -> "ObjectInfo":
-        from .origin import ObjectInfoOrigin
+    def from_comfyui_modules(cls) -> "NodeInfo":
+        from .origin import NodeInfoOrigin
         from .convert import _detect_comfyui_root_from_imports
 
-        oi = cls(object_info_from_comfyui_modules())
+        oi = cls(node_info_from_comfyui_modules())
         root = _detect_comfyui_root_from_imports()
-        setattr(oi, "_autoflow_origin", ObjectInfoOrigin(requested="modules", resolved="modules", modules_root=str(root) if root else None))
+        setattr(oi, "_autoflow_origin", NodeInfoOrigin(requested="modules", resolved="modules", modules_root=str(root) if root else None))
         setattr(oi, "_autoflow_source", f"modules:{root}" if root else "modules")
         return oi
 
@@ -1973,37 +2117,37 @@ class ObjectInfo(dict):
         *,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         output_path: Optional[Union[str, Path]] = None,
-    ) -> "ObjectInfo":
+    ) -> "NodeInfo":
         from .net import resolve_comfy_server_url
-        from .origin import ObjectInfoOrigin
+        from .origin import NodeInfoOrigin
 
         effective_url = resolve_comfy_server_url(server_url)
-        data = fetch_object_info(effective_url, timeout=timeout)
+        data = fetch_node_info(effective_url, timeout=timeout)
         oi = cls(data)
-        setattr(oi, "_autoflow_origin", ObjectInfoOrigin(requested=server_url or "server_url", resolved="server", effective_server_url=effective_url))
+        setattr(oi, "_autoflow_origin", NodeInfoOrigin(requested=server_url or "server_url", resolved="server", effective_server_url=effective_url))
         setattr(oi, "_autoflow_source", f"server:{effective_url}")
         if output_path is not None:
             oi.save(output_path)
         return oi
 
     @classmethod
-    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]]) -> "ObjectInfo":
-        from .origin import ObjectInfoOrigin
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]]) -> "NodeInfo":
+        from .origin import NodeInfoOrigin
 
         data: Any
-        origin: Optional[ObjectInfoOrigin] = None
+        origin: Optional[NodeInfoOrigin] = None
         source: Optional[str] = None
         if isinstance(x, dict):
             data = x
-            origin = ObjectInfoOrigin(requested="dict", resolved="dict")
+            origin = NodeInfoOrigin(requested="dict", resolved="dict")
             source = "dict"
         elif isinstance(x, (bytes, bytearray)):
             data = json.loads(bytes(x).decode("utf-8"))
-            origin = ObjectInfoOrigin(requested="bytes", resolved="dict")
+            origin = NodeInfoOrigin(requested="bytes", resolved="dict")
             source = "json-bytes"
         elif isinstance(x, Path):
             data = json.loads(x.read_text(encoding="utf-8"))
-            origin = ObjectInfoOrigin(requested=str(x), resolved="file")
+            origin = NodeInfoOrigin(requested=str(x), resolved="file")
             try:
                 source = f"file:{x.expanduser().resolve()}"
             except Exception:
@@ -2011,24 +2155,24 @@ class ObjectInfo(dict):
         elif isinstance(x, str):
             if looks_like_json(x):
                 data = json.loads(x)
-                origin = ObjectInfoOrigin(requested="json", resolved="dict")
+                origin = NodeInfoOrigin(requested="json", resolved="dict")
                 source = "json-string"
             elif Path(x).exists():
                 data = json.loads(Path(x).read_text(encoding="utf-8"))
-                origin = ObjectInfoOrigin(requested=x, resolved="file")
+                origin = NodeInfoOrigin(requested=x, resolved="file")
                 try:
                     source = f"file:{Path(x).expanduser().resolve()}"
                 except Exception:
                     source = f"file:{x}"
             else:
                 data = json.loads(x)
-                origin = ObjectInfoOrigin(requested="json", resolved="dict")
+                origin = NodeInfoOrigin(requested="json", resolved="dict")
                 source = "json-string"
         else:
             raise TypeError("x must be a dict, bytes, Path, or str (file path or JSON string)")
 
         if not isinstance(data, dict):
-            raise ValueError("object_info must be a dict at top level")
+            raise ValueError("node_info must be a dict at top level")
         oi = cls(data)
         if origin is not None:
             setattr(oi, "_autoflow_origin", origin)
@@ -2123,7 +2267,7 @@ __all__ = [
     "ApiFlow",
     "Flow",
     "Workflow",
-    "ObjectInfo",
+    "NodeInfo",
     # re-export error/result types for convenience (legacy surface)
     "WorkflowConverterError",
     "NodeInfoError",

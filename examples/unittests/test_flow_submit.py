@@ -27,7 +27,7 @@ class TestFlowSubmitWrapper(unittest.TestCase):
         def fake_http_json(url, payload=None, timeout=0, method="POST"):
             calls.append({"url": url, "payload": payload, "timeout": timeout, "method": method})
             if url.endswith("/prompt"):
-                # Ensure no MarkdownNote made it into the API prompt (it isn't in object_info.json)
+                # Ensure no MarkdownNote made it into the API prompt (it isn't in node_info.json)
                 prompt = payload.get("prompt") if isinstance(payload, dict) else None
                 self.assertIsInstance(prompt, dict)
                 class_types = [v.get("class_type") for v in prompt.values() if isinstance(v, dict)]
@@ -40,7 +40,7 @@ class TestFlowSubmitWrapper(unittest.TestCase):
         try:
             sub = f.submit(
                 server_url="http://example.invalid",
-                object_info=fixture_path("object_info.json"),
+                node_info=fixture_path("node_info.json"),
                 wait=False,
                 fetch_outputs=False,
             )

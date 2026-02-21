@@ -311,18 +311,18 @@ def build_api_dag(api: Dict[str, Any]) -> Dag:
     return Dag({"class": "ApiFlow", "nodes": nodes, "edges": edges, "entities": entities})
 
 
-def build_flow_dag(flow: Dict[str, Any], *, object_info: Optional[Dict[str, Any]] = None) -> Dag:
+def build_flow_dag(flow: Dict[str, Any], *, node_info: Optional[Dict[str, Any]] = None) -> Dag:
     """Build a DAG from a workspace flow (Flow) using its link table.
 
-    If object_info is provided, the DAG is filtered to node types present in object_info,
+    If node_info is provided, the DAG is filtered to node types present in node_info,
     matching Flow->ApiFlow conversion behavior (UI-only nodes like MarkdownNote are excluded).
     """
     nodes_list = flow.get("nodes", [])
     nodes: List[NodeId] = []
     entities: Dict[NodeId, Dict[str, Any]] = {}
     allowed_types: Optional[Set[str]] = None
-    if isinstance(object_info, dict) and object_info:
-        allowed_types = set(object_info.keys())
+    if isinstance(node_info, dict) and node_info:
+        allowed_types = set(node_info.keys())
     if isinstance(nodes_list, list):
         for n in nodes_list:
             if not isinstance(n, dict):

@@ -54,19 +54,19 @@ from autoflow import Flow, ApiFlow, Workflow
 td = Path(os.environ["AUTOFLOW_TESTDATA_DIR"])
 flow_path = td / "FLOW.json"
 api_path = td / "default-subgraphx2-api.json"
-oi_path = td / "object_info.json"
+oi_path = td / "node_info.json"
 
-f = Flow.load(flow_path, object_info=oi_path)
+f = Flow.load(flow_path, node_info=oi_path)
 print(f.source)
-print(f.object_info.source)
+print(f.node_info.source)
 
-a = ApiFlow.load(api_path, object_info=oi_path)
+a = ApiFlow.load(api_path, node_info=oi_path)
 print(a.source)
-print(a.object_info.source)
+print(a.node_info.source)
 
-api = Workflow(str(flow_path), object_info=oi_path)
+api = Workflow(str(flow_path), node_info=oi_path)
 print(api.source)
-print(api.object_info.source)
+print(api.node_info.source)
 """
         out = self._run(code)
         self.assertTrue(out[0].startswith("file:"), out[0])

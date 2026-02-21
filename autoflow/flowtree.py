@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Iterator, MutableMapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from functools import wraps
 
 from . import models as _legacy
-from .convert import normalize_server_url, WorkflowConverterError, resolve_object_info_with_origin
+from .convert import normalize_server_url, WorkflowConverterError, resolve_node_info_with_origin
 from .defaults import DEFAULT_HTTP_TIMEOUT_S
 from .defaults import (
     DEFAULT_FETCH_IMAGES,
@@ -234,14 +235,14 @@ class ApiFlow(_MappingWrapper):
                 allow_none=True,
             )
         timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
-        if "object_info" in kwargs:
-            oi_in = kwargs.get("object_info")
-            # Preserve source metadata when caller passes flowtree ObjectInfo.
-            if isinstance(oi_in, ObjectInfo):
-                kwargs["object_info"] = oi_in._oi
+        if "node_info" in kwargs:
+            oi_in = kwargs.get("node_info")
+            # Preserve source metadata when caller passes flowtree NodeInfo.
+            if isinstance(oi_in, NodeInfo):
+                kwargs["node_info"] = oi_in._oi
         else:
-            # Auto-resolve from env (and keep env provenance in ObjectInfo.source).
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            # Auto-resolve from env (and keep env provenance in NodeInfo.source).
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 kwargs.get("server_url"),
                 timeout,
@@ -249,12 +250,12 @@ class ApiFlow(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is not None:
-                oi_obj = _legacy.ObjectInfo(oi_dict)
+                oi_obj = _legacy.NodeInfo(oi_dict)
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
-                kwargs["object_info"] = oi_obj
+                kwargs["node_info"] = oi_obj
         api = x if isinstance(x, _legacy.ApiFlow) else _legacy.ApiFlow(x, **kwargs)
         self._api = api
         self._data = api  # underlying is a dict subclass
@@ -264,8 +265,8 @@ class ApiFlow(_MappingWrapper):
         return cls(x, **kwargs)
 
     @property
-    def object_info(self):
-        return getattr(self._api, "object_info", None)
+    def node_info(self):
+        return getattr(self._api, "node_info", None)
 
     @property
     def use_api(self):
@@ -335,8 +336,43 @@ class ApiFlow(_MappingWrapper):
             raise AttributeError(f"No nodes with class_type '{name}'")
         return NodeSet.from_apiflow_group(self, group_name=name, matches=matches)
 
+    def __dir__(self) -> List[str]:
+        base = {"find", "by_id", "submit", "execute", "save", "to_json", "to_dict",
+                "node_info", "dag", "items", "keys", "values"}
+        for _nid, n in self._api.items():
+            if isinstance(n, dict):
+                ct = n.get("class_type")
+                if isinstance(ct, str) and ct:
+                    base.add(ct)
+        return sorted(base)
+
+    def _as_dict(self) -> Dict[str, Any]:
+        """Build {Type[i]: widget_dict} for all nodes."""
+        groups: Dict[str, Any] = {}
+        type_counts: Dict[str, int] = {}
+        for nid, node in self._api.items():
+            if not isinstance(node, dict):
+                continue
+            ct = node.get("class_type", f"node_{nid}")
+            i = type_counts.get(ct, 0)
+            type_counts[ct] = i + 1
+            key = f"{ct}[{i}]"
+            inputs = node.get("inputs", {})
+            widgets = {k: v for k, v in inputs.items() if not isinstance(v, list)} if isinstance(inputs, dict) else {}
+            groups[key] = widgets
+        return groups
+
+    def items(self) -> list:
+        return list(self._as_dict().items())
+
+    def keys(self) -> list:
+        return list(self._as_dict().keys())
+
+    def values(self) -> list:
+        return list(self._as_dict().values())
+
     def __repr__(self) -> str:
-        return f"<ApiFlow(flowtree) count={len(self._api)}>"
+        return f"ApiFlow({repr(self._as_dict())})"
 
     @property
     def dag(self):
@@ -353,12 +389,12 @@ class Flow(_MappingWrapper):
                 allow_none=True,
             )
         timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
-        if "object_info" in kwargs:
-            oi_in = kwargs.get("object_info")
-            if isinstance(oi_in, ObjectInfo):
-                kwargs["object_info"] = oi_in._oi
+        if "node_info" in kwargs:
+            oi_in = kwargs.get("node_info")
+            if isinstance(oi_in, NodeInfo):
+                kwargs["node_info"] = oi_in._oi
         else:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 kwargs.get("server_url"),
                 timeout,
@@ -366,15 +402,26 @@ class Flow(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is not None:
-                oi_obj = _legacy.ObjectInfo(oi_dict)
+                oi_obj = _legacy.NodeInfo(oi_dict)
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
-                kwargs["object_info"] = oi_obj
+                kwargs["node_info"] = oi_obj
         f = x if isinstance(x, _legacy.Flow) else _legacy.Flow(x, **kwargs)
         self._flow = f
         self._data = f
+        # Warn if node_info could not be resolved.
+        if getattr(f, "node_info", None) is None:
+            warnings.warn(
+                "Flow created without node_info — widget access and tab completion will be limited.\n"
+                "Options:\n"
+                "  • Set AUTOFLOW_COMFYUI_SERVER_URL env var (auto-fetches)\n"
+                "  • Pass node_info= to Flow()\n"
+                "  • Call flow.fetch_node_info(server_url=...)\n"
+                "See: docs/node-info-and-env.md",
+                UserWarning, stacklevel=2,
+            )
 
     @classmethod
     def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "Flow":
@@ -385,8 +432,8 @@ class Flow(_MappingWrapper):
         return FlowTreeNodesView(self)
 
     @property
-    def object_info(self):
-        return getattr(self._flow, "object_info", None)
+    def node_info(self):
+        return getattr(self._flow, "node_info", None)
 
     @property
     def workflow_meta(self):
@@ -399,8 +446,8 @@ class Flow(_MappingWrapper):
     def find(self, **kwargs: Any):
         return self.nodes.find(**kwargs)
 
-    def fetch_object_info(self, *args: Any, **kwargs: Any):
-        return self._flow.fetch_object_info(*args, **kwargs)
+    def fetch_node_info(self, *args: Any, **kwargs: Any):
+        return self._flow.fetch_node_info(*args, **kwargs)
 
     def convert(self, *args: Any, **kwargs: Any) -> ApiFlow:
         api = self._flow.convert(*args, **kwargs)
@@ -415,7 +462,7 @@ class Flow(_MappingWrapper):
     def execute(
         self,
         *,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = False,
         convert_callbacks: Optional[Any] = None,
@@ -434,7 +481,7 @@ class Flow(_MappingWrapper):
         `submit(server_url=...)` instead.
         """
         api = self._flow.convert(
-            object_info=object_info,
+            node_info=node_info,
             server_url=None,
             timeout=timeout,
             include_meta=include_meta,
@@ -456,9 +503,10 @@ class Flow(_MappingWrapper):
         return getattr(self._flow, name)
 
     def __repr__(self) -> str:
-        nodes = self._flow.get("nodes", [])
+        nv = self.nodes
         links = self._flow.get("links", [])
-        return f"<Flow(flowtree) nodes={len(nodes) if isinstance(nodes, list) else 0} links={len(links) if isinstance(links, list) else 0}>"
+        link_count = len(links) if isinstance(links, list) else 0
+        return f"Flow(nodes={repr(nv._as_dict())}, links={link_count})"
 
     @property
     def dag(self):
@@ -466,21 +514,21 @@ class Flow(_MappingWrapper):
         return getattr(self._flow, "dag")
 
 
-class ObjectInfo(_MappingWrapper):
-    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.ObjectInfo]] = None, **kwargs: Any):
+class NodeInfo(_MappingWrapper):
+    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.NodeInfo]] = None, **kwargs: Any):
         """
-        Create an ObjectInfo wrapper.
+        Create an NodeInfo wrapper.
 
         Supported inputs (x or source=):
-        - dict-like object_info
-        - file path to object_info.json
-        - URL to a JSON object_info
+        - dict-like node_info
+        - file path to node_info.json
+        - URL to a JSON node_info
         - "modules" / "from_comfyui_modules" to load from local ComfyUI modules
         - "fetch" / "server" when server_url (or AUTOFLOW_COMFYUI_SERVER_URL) is available
 
         Default behavior (when x and source are omitted):
-        - If AUTOFLOW_OBJECT_INFO_SOURCE (or server_url) is set, object_info is auto-resolved.
-        - Otherwise, an empty ObjectInfo is created (no error).
+        - If AUTOFLOW_NODE_INFO_SOURCE (or server_url) is set, node_info is auto-resolved.
+        - Otherwise, an empty NodeInfo is created (no error).
         """
         source = kwargs.pop("source", None)
         server_url = kwargs.pop("server_url", None)
@@ -490,10 +538,10 @@ class ObjectInfo(_MappingWrapper):
         # Prefer explicit x over source= for backwards compatibility.
         inp = x if x is not None else source
 
-        if isinstance(inp, _legacy.ObjectInfo):
+        if isinstance(inp, _legacy.NodeInfo):
             oi = inp
         elif inp is not None:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 inp,
                 server_url,
                 timeout,
@@ -501,14 +549,14 @@ class ObjectInfo(_MappingWrapper):
                 require_source=True,
             )
             if oi_dict is None:  # pragma: no cover (resolver should raise when require_source=True)
-                raise WorkflowConverterError("Missing object_info source. Pass source= or set AUTOFLOW_OBJECT_INFO_SOURCE.")
-            oi = _legacy.ObjectInfo(oi_dict)
+                raise WorkflowConverterError("Missing node_info source. Pass source= or set AUTOFLOW_NODE_INFO_SOURCE.")
+            oi = _legacy.NodeInfo(oi_dict)
             setattr(oi, "_autoflow_origin", origin)
             s = getattr(oi, "source", None)
             if isinstance(s, str) and s:
                 setattr(oi, "_autoflow_source", s)
         else:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 server_url,
                 timeout,
@@ -516,9 +564,9 @@ class ObjectInfo(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is None:
-                oi = _legacy.ObjectInfo({})
+                oi = _legacy.NodeInfo({})
             else:
-                oi = _legacy.ObjectInfo(oi_dict)
+                oi = _legacy.NodeInfo(oi_dict)
                 setattr(oi, "_autoflow_origin", origin)
                 s = getattr(oi, "source", None)
                 if isinstance(s, str) and s:
@@ -528,12 +576,12 @@ class ObjectInfo(_MappingWrapper):
         self._data = oi
 
     @classmethod
-    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "ObjectInfo":
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "NodeInfo":
         return cls(x, **kwargs)
 
     @classmethod
-    def from_comfyui_modules(cls) -> "ObjectInfo":
-        return cls(_legacy.ObjectInfo.from_comfyui_modules())
+    def from_comfyui_modules(cls) -> "NodeInfo":
+        return cls(_legacy.NodeInfo.from_comfyui_modules())
 
     class _DualMethod:
         """
@@ -564,14 +612,14 @@ class ObjectInfo(_MappingWrapper):
             return _bound
 
     @staticmethod
-    def _fetch_new(cls, *args: Any, **kwargs: Any) -> "ObjectInfo":
-        """Fetch object_info from server and return a new ObjectInfo."""
-        return cls(_legacy.ObjectInfo.fetch(*args, **kwargs))
+    def _fetch_new(cls, *args: Any, **kwargs: Any) -> "NodeInfo":
+        """Fetch node_info from server and return a new NodeInfo."""
+        return cls(_legacy.NodeInfo.fetch(*args, **kwargs))
 
     @staticmethod
-    def _fetch_inplace(self, *args: Any, **kwargs: Any) -> "ObjectInfo":
-        """Fetch object_info from server and update this instance in-place."""
-        oi = _legacy.ObjectInfo.fetch(*args, **kwargs)
+    def _fetch_inplace(self, *args: Any, **kwargs: Any) -> "NodeInfo":
+        """Fetch node_info from server and update this instance in-place."""
+        oi = _legacy.NodeInfo.fetch(*args, **kwargs)
         self._oi = oi
         self._data = oi
         return self
@@ -589,7 +637,10 @@ class ObjectInfo(_MappingWrapper):
         return getattr(self._oi, name)
 
     def __repr__(self) -> str:
-        return f"<ObjectInfo(flowtree) count={len(self._oi)}>"
+        count = len(self._oi)
+        types = sorted(self._oi.keys())[:10]
+        more = f", +{count - 10} more" if count > 10 else ""
+        return f"NodeInfo(count={count}, types={types!r}{more})"
 
 
 class Workflow:
@@ -606,7 +657,7 @@ class Workflow:
         return cls(*args, **kwargs)
 
 
-__all__ = ["Tree", "Flow", "ApiFlow", "ObjectInfo", "Workflow"]
+__all__ = ["Tree", "Flow", "ApiFlow", "NodeInfo", "Workflow"]
 
 
 # ---------------------------------------------------------------------------
@@ -769,23 +820,51 @@ class NodeRef:
             return self.unwrap()[key]
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"attrs", "choices", "tooltip", "spec", "tree", "to_dict", "unwrap",
+                "type", "title", "where", "meta"}
         try:
-            base.update(self.attrs())
+            base.update(self._widget_dict().keys())
         except Exception:
             pass
         return sorted(base)
 
+    def _widget_names(self) -> List[str]:
+        """Return only user-editable widget input names (not links or raw keys)."""
+        try:
+            parent = object.__getattribute__(self._p, "_parent")
+            ni = getattr(parent, "node_info", None)
+            if ni is not None:
+                return list(_legacy.get_widget_input_names(
+                    self.type, node_info=ni, use_api=True
+                ))
+        except Exception:
+            pass
+        # Fallback: inputs that aren't lists (links are [node_id, slot])
+        try:
+            d = self.unwrap()
+            inputs = d.get("inputs") if isinstance(d, dict) else None
+            if isinstance(inputs, dict):
+                return [k for k, v in inputs.items() if not isinstance(v, list)]
+        except Exception:
+            pass
+        return []
+
+    def _widget_dict(self) -> Dict[str, Any]:
+        """Return a {name: value} dict of widget values, empty if no node_info."""
+        try:
+            names = self._widget_names()
+            if not names:
+                return {}
+            return {n: getattr(self._p, n, None) for n in names}
+        except Exception:
+            return {}
+
     def __repr__(self) -> str:
-        t = self.type
-        title = self.title
-        bits = [f"{self.kind}", f"id={self.addr!r}"]
-        if t:
-            bits.append(f"type={t!r}")
-        if title:
-            bits.append(f"title={title!r}")
-        bits.append(f"where={self.where!r}")
-        return "<NodeRef " + " ".join(bits) + ">"
+        w = self._widget_dict()
+        return repr({str(self.where): w})
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 class NodeSet:
@@ -865,15 +944,24 @@ class NodeSet:
         setattr(self.first(), name, value)
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"set", "apply", "first", "attrs", "find", "items", "keys", "values"}
         try:
-            base.update(self.attrs())
+            # Show only widget names (not link inputs or raw node keys)
+            for n in self._nodes:
+                base.update(n._widget_dict().keys())
         except Exception:
             pass
         return sorted(base)
 
     def __repr__(self) -> str:
-        return f"<NodeSet kind={self._kind!r} count={len(self._nodes)} path={self._set_path!r}>"
+        # Always show widget dicts for all nodes (consistent dict format)
+        combined: Dict[str, Any] = {}
+        for n in self._nodes:
+            combined[str(n.where)] = n._widget_dict()
+        return repr(combined)
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     @staticmethod
     def from_apiflow_group(api: ApiFlow, *, group_name: str, matches: List[Tuple[str, Dict[str, Any]]]) -> "NodeSet":
@@ -926,7 +1014,7 @@ class FlowTreeNodesView:
         self._flowtree = flowtree
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"items", "keys", "values", "to_list", "to_dict", "find", "by_path"}
         flow = self._flowtree._flow
         nodes = flow.get("nodes", [])
         if isinstance(nodes, list):
@@ -943,6 +1031,54 @@ class FlowTreeNodesView:
         if not isinstance(nodes, list):
             return []
         return [self[i] for i in range(len(nodes))]
+
+    def _as_dict(self) -> Dict[str, Any]:
+        """Build {nodes.Type[i]: widget_dict} for all nodes."""
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if not isinstance(nodes, list):
+            return {}
+        type_counts: Dict[str, int] = {}
+        out: Dict[str, Any] = {}
+        for idx, n in enumerate(nodes):
+            if not isinstance(n, dict):
+                continue
+            t = n.get("type", f"node_{idx}")
+            i = type_counts.get(t, 0)
+            type_counts[t] = i + 1
+            key = f"nodes.{t}[{i}]"
+            try:
+                ref = self[idx]
+                out[key] = ref._widget_dict()
+            except Exception:
+                out[key] = {}
+        return out
+
+    def __repr__(self) -> str:
+        d = self._as_dict()
+        if not d:
+            return "<FlowTreeNodesView (empty)>"
+        return repr(d)
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def items(self) -> list:
+        return list(self._as_dict().items())
+
+    def keys(self) -> list:
+        return list(self._as_dict().keys())
+
+    def values(self) -> list:
+        return list(self._as_dict().values())
+
+    def __iter__(self):
+        return iter(self._as_dict())
+
+    def __len__(self) -> int:
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        return len(nodes) if isinstance(nodes, list) else 0
 
     def to_dict(self) -> Dict[str, NodeRef]:
         flow = self._flowtree._flow

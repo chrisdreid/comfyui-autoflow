@@ -24,13 +24,13 @@ HOW TO RUN THE SCRIPT (with ComfyUI server)
 # If you want to use your own workflows
 # Pass paths:
 # --workflow /path/to/your/workflow.json
-# --object-info /path/to/object_info.json
+# --node-info /path/to/node_info.json
 # --image /path/to/a/comfyui_output.png
 
 # Example:
 >> python examples/code/docs-test.py \
     --workflow /abs/path/workflow.json \
-    --object-info /abs/path/object_info.json \
+    --node-info /abs/path/node_info.json \
     --image /abs/path/comfyui_output.png
 ---------------------------------------------------------------------------
 
@@ -63,10 +63,10 @@ Algorithm:
   - **json**: `json.loads()` and print a short summary
 - Add a minimal sandbox for snippet execution:
   - create a temp dir
-  - write `workflow.json`, `workflow-api.json`, `object_info.json`
+  - write `workflow.json`, `workflow-api.json`, `node_info.json`
   - provide a PNG (`ComfyUI_00001_.png` and `output.png`) from repo sample image
 - Add gating:
-  - If a block looks like it requires network (`localhost:8188`, `.submit(`, `ObjectInfo.fetch`, `/object_info`, `--submit`),
+  - If a block looks like it requires network (`localhost:8188`, `.submit(`, `NodeInfo.fetch`, `/object_info`, `--submit`),
     it must be **skipped unless `allow_network=True`**.
   - If a Python block looks like framework glue / pseudo-code (`@app.`, `FastAPI`, undefined `app`), default to compile-only.
 - Expose CLI flags:
@@ -75,7 +75,7 @@ Algorithm:
   - `--exec-python` (attempt exec for python blocks)
   - `--run-cli` (attempt to run bash blocks that are safe python invocations)
   - `--allow-network`
-  - `--workflow`, `--object-info`, `--image`
+  - `--workflow`, `--node-info`, `--image`
   - `--out` (output dir for temp artifacts; default is under this script)
 
 Keep output:
@@ -145,7 +145,7 @@ REPO_ROOT = HERE.parents[2]
 DOCS_DIR = REPO_ROOT / "docs"
 
 DEFAULT_WORKFLOW = REPO_ROOT / "default.json"
-DEFAULT_OBJECT_INFO = REPO_ROOT / "object_info.json"
+DEFAULT_NODE_INFO = REPO_ROOT / "node_info.json"
 DEFAULT_IMAGE = REPO_ROOT / "comfyui-image.png"
 
 # Ensure repo-local imports work when running this script directly.
@@ -173,7 +173,7 @@ def _looks_networky(text: str) -> bool:
         "objectinfo.fetch",
         ".submit(",
         "--submit",
-        "--download-object-info-path",
+        "--download-node-info-path",
         "--server-url",
     ]
     return any(n in t for n in needles)
@@ -227,7 +227,7 @@ def _server_reachable(server_url: str, *, timeout_s: float = 1.0) -> bool:
         return False
 
 
-def _fetch_object_info(server_url: str, *, timeout_s: float = 10.0) -> Dict[str, Any]:
+def _fetch_node_info(server_url: str, *, timeout_s: float = 10.0) -> Dict[str, Any]:
     """
     Fetch ComfyUI /object_info (stdlib-only).
     """
@@ -387,17 +387,17 @@ def _make_sandbox(
     *,
     out_dir: Path,
     workflow_src: Path,
-    object_info_src: Optional[Path],
+    node_info_src: Optional[Path],
     image_src: Optional[Path],
     server_url: Optional[str] = None,
-    auto_object_info: bool = False,
+    auto_node_info: bool = False,
     make_api_payload: bool = True,
     verbose: bool = False,
 ) -> Path:
     """
     Create a sandbox directory with canonical filenames used by docs snippets:
     - workflow.json
-    - object_info.json
+    - node_info.json
     - workflow-api.json (optional; generated offline)
     - ComfyUI_00001_.png and output.png (copy of repo sample)
     """
@@ -405,24 +405,24 @@ def _make_sandbox(
     sb = out_dir
 
     wf = sb / "workflow.json"
-    oi = sb / "object_info.json"
+    oi = sb / "node_info.json"
     wf_api = sb / "workflow-api.json"
     png1 = sb / "ComfyUI_00001_.png"
     png2 = sb / "output.png"
 
     wf.write_text(_read_text(workflow_src), encoding="utf-8")
 
-    # object_info.json:
+    # node_info.json:
     # - If user provided a file, copy it.
-    # - Else if auto_object_info and server_url is set, fetch it.
+    # - Else if auto_node_info and server_url is set, fetch it.
     # - Else fall back to repo default (keeps offline behavior).
-    if object_info_src is not None and object_info_src.exists():
-        oi.write_text(_read_text(object_info_src), encoding="utf-8")
-    elif auto_object_info and server_url:
-        data = _fetch_object_info(server_url, timeout_s=10.0)
+    if node_info_src is not None and node_info_src.exists():
+        oi.write_text(_read_text(node_info_src), encoding="utf-8")
+    elif auto_node_info and server_url:
+        data = _fetch_node_info(server_url, timeout_s=10.0)
         oi.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     else:
-        oi.write_text(_read_text(DEFAULT_OBJECT_INFO), encoding="utf-8")
+        oi.write_text(_read_text(DEFAULT_NODE_INFO), encoding="utf-8")
 
     # PNG samples (optional)
     if image_src is not None and image_src.exists():
@@ -435,7 +435,7 @@ def _make_sandbox(
         # Import locally to keep this script usable even if autoflow isn't installed (repo-local usage).
         from autoflow import Workflow  # type: ignore
 
-        api = Workflow(str(wf), object_info=str(oi))
+        api = Workflow(str(wf), node_info=str(oi))
         api.save(str(wf_api))
 
     # Ensure PNG samples contain ComfyUI-style metadata so docs snippets that use Flow.load(ApiFlow.load)
@@ -697,12 +697,12 @@ def _run_bash_block(
             continue
 
         # Choose cwd:
-        # - commands that reference workflow.json/object_info.json should run in the sandbox
+        # - commands that reference workflow.json/node_info.json should run in the sandbox
         # - commands that reference examples/ paths should run at repo root
         cmd_l = cmd.lower()
         if "examples/" in cmd_l or "examples\\" in cmd_l:
             cwd = REPO_ROOT
-        elif "workflow.json" in cmd_l or "object_info.json" in cmd_l or "workflow-api.json" in cmd_l:
+        elif "workflow.json" in cmd_l or "node_info.json" in cmd_l or "workflow-api.json" in cmd_l:
             cwd = sandbox_dir
         else:
             cwd = REPO_ROOT
@@ -760,7 +760,7 @@ def e2e_server_roundtrip(
     End-to-end docs correctness check against a running ComfyUI server.
 
     Steps:
-    1) Fetch /object_info from server (sandboxed object_info.json).
+    1) Fetch /object_info from server (sandboxed node_info.json).
     2) Load a template workflow.json (repo default by default, or workflow_url if provided).
     3) Convert -> ApiFlow, set prompt to a autoflow-themed scene, set fixed seed.
     4) Submit, wait, fetch output images, save first image.
@@ -805,12 +805,12 @@ def e2e_server_roundtrip(
     sb = run_dir / "sandbox"
     _safe_mkdir(sb)
 
-    # Fetch object_info from server into sandbox.
-    oi_data = _fetch_object_info(server_url2, timeout_s=10.0)
-    oi_path = sb / "object_info.json"
+    # Fetch node_info from server into sandbox.
+    oi_data = _fetch_node_info(server_url2, timeout_s=10.0)
+    oi_path = sb / "node_info.json"
     oi_path.write_text(json.dumps(oi_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if verbose:
-        print(f"[e2e] saved object_info.json: {oi_path}")
+        print(f"[e2e] saved node_info.json: {oi_path}")
 
     # Copy workflow into sandbox as workflow.json (to match docs snippets).
     sb_wf = sb / "workflow.json"
@@ -820,7 +820,7 @@ def e2e_server_roundtrip(
     from autoflow import Workflow, ApiFlow, Flow  # type: ignore
 
     def _apply_prompt_and_seed(api: Dict[str, Any]) -> Dict[str, Any]:
-        a = api if isinstance(api, ApiFlow) else ApiFlow(api, object_info=str(oi_path))
+        a = api if isinstance(api, ApiFlow) else ApiFlow(api, node_info=str(oi_path))
         # Set prompt text on CLIPTextEncode nodes (heuristic: keep "watermark" style negatives intact).
         try:
             for node in a.cliptextencode:
@@ -872,7 +872,7 @@ def e2e_server_roundtrip(
         return bytes(b)
 
     # Run 1: template workflow -> api -> submit -> image
-    api1 = Workflow(str(sb_wf), object_info=str(oi_path))
+    api1 = Workflow(str(sb_wf), node_info=str(oi_path))
     api1 = _apply_prompt_and_seed(api1)  # type: ignore[assignment]
     b1 = _submit_and_first_image_bytes(api1)  # type: ignore[arg-type]
     img1_path = run_dir / "render-1.png"
@@ -889,7 +889,7 @@ def e2e_server_roundtrip(
         return
 
     # Run 2: extracted flow -> api -> submit -> image
-    api2 = flow_from_png.convert(object_info=str(oi_path))  # type: ignore[union-attr]
+    api2 = flow_from_png.convert(node_info=str(oi_path))  # type: ignore[union-attr]
     api2 = _apply_prompt_and_seed(api2)  # type: ignore[assignment]
     b2 = _submit_and_first_image_bytes(api2)  # type: ignore[arg-type]
     img2_path = run_dir / "render-2.png"
@@ -955,7 +955,7 @@ def _register_doc_blocks(
                     poll_interval_s: Optional[str] = None,
                     submit_client_id: Optional[str] = None,
                     workflow: Path = DEFAULT_WORKFLOW,
-                    object_info: Optional[Path] = DEFAULT_OBJECT_INFO,
+                    node_info: Optional[Path] = DEFAULT_NODE_INFO,
                     image: Optional[Path] = DEFAULT_IMAGE,
                     out: Optional[Path] = None,
                     verbose: bool = False,
@@ -989,10 +989,10 @@ def _register_doc_blocks(
                         sandbox = _make_sandbox(
                             out_dir=sb,
                             workflow_src=workflow,
-                            object_info_src=object_info,
+                            node_info_src=node_info,
                             image_src=image,
                             server_url=server_url2,
-                            auto_object_info=bool(allow_network),
+                            auto_node_info=bool(allow_network),
                             make_api_payload=True,
                             verbose=verbose,
                         )
@@ -1120,9 +1120,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     p.add_argument("--workflow", default=str(DEFAULT_WORKFLOW), help="Path to workspace workflow.json sample")
     p.add_argument(
-        "--object-info",
-        default=str(DEFAULT_OBJECT_INFO),
-        help="Path to object_info.json sample, or 'auto' to fetch from server in online mode",
+        "--node-info",
+        default=str(DEFAULT_NODE_INFO),
+        help="Path to node_info.json sample, or 'auto' to fetch from server in online mode",
     )
     p.add_argument(
         "--image",
@@ -1160,11 +1160,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     skip = set(_split_csv(ns.skip))
 
     workflow = Path(ns.workflow).expanduser().resolve()
-    object_info: Optional[Path]
-    if (ns.object_info or "").strip().lower() == "auto":
-        object_info = None
+    node_info: Optional[Path]
+    if (ns.node_info or "").strip().lower() == "auto":
+        node_info = None
     else:
-        object_info = Path(ns.object_info).expanduser().resolve()
+        node_info = Path(ns.node_info).expanduser().resolve()
 
     image: Optional[Path]
     if (ns.image or "").strip() == "":
@@ -1235,7 +1235,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 poll_interval_s=poll_interval_s,
                 submit_client_id=submit_client_id,
                 workflow=workflow,
-                object_info=object_info,
+                node_info=node_info,
                 image=image,
                 out=out,
                 verbose=bool(ns.verbose),

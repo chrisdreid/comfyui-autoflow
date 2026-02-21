@@ -31,7 +31,7 @@
 |---|---|
 | Node IDs | Preserved 1:1 (`str` → `int`) |
 | `class_type` → `type` | Direct mapping |
-| Named inputs → `widgets_values` | Reverse-map via `object_info` (widget name → positional index) |
+| Named inputs → `widgets_values` | Reverse-map via `node_info` (widget name → positional index) |
 | Input connections | Inline `["node_id", slot_index]` refs → rebuild link table entries |
 | Execution order | Toposort from `dag.py` already exists |
 | Rough positions | Toposort + column/row auto-layout (see below) |
@@ -45,8 +45,8 @@
 | Groups | Cannot recreate |
 | UI-only nodes | Gone (MarkdownNote, etc.) |
 | Properties (`cnr_id`, `ver`, etc.) | Gone |
-| Output slot type names | Need `object_info` to reconstruct |
-| Widget ordering for non-standard widgets | Risky without `object_info` |
+| Output slot type names | Need `node_info` to reconstruct |
+| Widget ordering for non-standard widgets | Risky without `node_info` |
 | Extra metadata (zoom, frontend version) | Defaults only |
 
 ### Auto-Layout Strategy (toposort-based)
@@ -72,8 +72,8 @@ This is the stronger use case. Instead of full reverse conversion, **sync edited
 ### How It Would Work
 
 ```python
-flow = Flow("workflow.json", object_info="object_info.json")
-api = flow.convert(object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
+api = flow.convert(node_info="node_info.json")
 
 # Edit with ApiFlow's nice dot-notation
 api.ksampler[0].seed = 42
@@ -92,14 +92,14 @@ For each API node (node_id, {class_type, inputs}):
   1. Find matching Flow node by id
   2. For each input name/value in the API node:
      a. If input is a widget (not a connection ref):
-        - Use object_info to find the widget's positional index in widgets_values
+        - Use node_info to find the widget's positional index in widgets_values
         - Update flow_node["widgets_values"][index] = new_value
      b. If input is a connection ref ["other_id", slot]:
         - Skip (connections are structural, not typically edited)
 ```
 
 This is **very feasible** because:
-- `object_info` already provides the widget name → index mapping
+- `node_info` already provides the widget name → index mapping
 - `_flow_widget_map()` in `models.py` (line 112) already does exactly this reverse lookup
 - Node IDs are preserved 1:1 between Flow and ApiFlow
 

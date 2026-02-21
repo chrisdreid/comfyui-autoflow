@@ -7,7 +7,7 @@ ComfyUI
 ██╔══██║██║   ██║   ██║   ██║   ██║██╔══╝  ██║     ██║   ██║██║███╗██║
 ██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║     ███████╗╚██████╔╝╚███╔███╔╝
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ 
-                                                       version: 1.2.0
+                                                       version: 1.3.0
 ```
 
 ```mermaid
@@ -50,6 +50,7 @@ Skip the GUI. `autoflow` handles the backend so you can automate/pipeline your C
 | **Map** | Patch values across nodes for pipelines (seeds, paths, prompts) |
 | **Extract** | Load workflows from ComfyUI PNG outputs (embedded metadata) |
 | **Stdlib-only** | No dependencies by default; optional Pillow, ImageMagick, ffmpeg |
+| **Widget introspection** | `.choices()`, `.tooltip()`, `.spec()` on any node input — query valid options from `node_info` |
 
 ## Requirements
 
@@ -93,36 +94,36 @@ Then use with `python -m autoflow ...` or `import autoflow` from Python.
   - Windows PowerShell: `$env:AUTOFLOW_COMFYUI_SERVER_URL = "http://localhost:8188"`
   - Windows CMD: `set AUTOFLOW_COMFYUI_SERVER_URL=http://localhost:8188`
   - Python: `import os; os.environ["AUTOFLOW_COMFYUI_SERVER_URL"] = "http://localhost:8188"`
-- Optional: set `AUTOFLOW_OBJECT_INFO_SOURCE=modules|fetch|server|/path/to/object_info.json` to auto-resolve `object_info`.
+- Optional: set `AUTOFLOW_NODE_INFO_SOURCE=modules|fetch|server|/path/to/node_info.json` to auto-resolve `node_info`.
 ---
 # `autoflow` - Quick Start
 
-### Get `object_info.json` (optional, one-time)
+### Get `node_info.json` (optional, one-time)
 
-Save `object_info.json` so you can convert offline. You can also convert against a running ComfyUI instance, but for efficiency we recommend pulling a new object_info.json file per instance (reproducible, no server needed).
+Save `node_info.json` so you can convert offline. You can also convert against a running ComfyUI instance, but for efficiency we recommend pulling a new node_info.json file per instance (reproducible, no server needed).
 
 ```mermaid
 flowchart LR
   comfy["ComfyUI server"] --> obj["/object_info"]
-  obj --> file["object_info.json"]
+  obj --> file["node_info.json"]
 ```
 
 ```python
 # api
-from autoflow import ObjectInfo
+from autoflow import NodeInfo
 
-ObjectInfo.fetch(server_url="http://localhost:8188", output_path="object_info.json")
+NodeInfo.fetch(server_url="http://localhost:8188", output_path="node_info.json")
 ```
 
 ```bash
 # cli
-python -m autoflow --download-object-info-path object_info.json --server-url http://localhost:8188
+python -m autoflow --download-node-info-path node_info.json --server-url http://localhost:8188
 ```
 
-- Direct modules (no server): `ObjectInfo.from_comfyui_modules()` builds `object_info` from local ComfyUI nodes.
-- Env source (optional): set `AUTOFLOW_OBJECT_INFO_SOURCE=modules|fetch|server|/path/to/object_info.json`.
+- Direct modules (no server): `NodeInfo.from_comfyui_modules()` builds `node_info` from local ComfyUI nodes.
+- Env source (optional): set `AUTOFLOW_NODE_INFO_SOURCE=modules|fetch|server|/path/to/node_info.json`.
 
-- More: [`docs/object-info-and-env.md`](docs/object-info-and-env.md)
+- More: [`docs/node-info-and-env.md`](docs/node-info-and-env.md)
 ## Convert live (using running ComfyUI)
 
 Convert `workflow.json` by fetching `/object_info` from your running ComfyUI server.
@@ -136,7 +137,7 @@ flowchart LR
 ```
 If environment variable `AUTOFLOW_COMFYUI_SERVER_URL` is set, `server_url` becomes optional.
 
-If `AUTOFLOW_OBJECT_INFO_SOURCE` is set, `Workflow(...)` will auto-resolve `object_info` when none is provided.
+If `AUTOFLOW_NODE_INFO_SOURCE` is set, `Workflow(...)` will auto-resolve `node_info` when none is provided.
 
 ```python
 # api
@@ -151,17 +152,17 @@ api.save("workflow-api.json")
 python -m autoflow --input-path workflow.json --output-path workflow-api.json
 ```
 
-- More: [`docs/convert.md`](docs/convert.md), [`docs/object-info-and-env.md`](docs/object-info-and-env.md)
+- More: [`docs/convert.md`](docs/convert.md), [`docs/node-info-and-env.md`](docs/node-info-and-env.md)
 
 
 ## Convert `workflow` to `workflow-api` (offline)
 
-Convert using your saved `object_info.json` (no server needed).
+Convert using your saved `node_info.json` (no server needed).
 
 ```mermaid
 flowchart LR
   workflowJson["workflow.json"] --> wf["Workflow(...)"]
-  objectInfo["object_info.json"] --> wf
+  objectInfo["node_info.json"] --> wf
   wf --> apiFlow["ApiFlow"]
   apiFlow --> saveApi["save(workflow-api.json)"]
 ```
@@ -170,17 +171,17 @@ flowchart LR
 # api
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api.save("workflow-api.json")
 ```
 
 ```bash
 # cli
-# Offline mode (saved object_info)
-python -m autoflow --input-path workflow.json --output-path workflow-api.json --object-info-path object_info.json
+# Offline mode (saved node_info)
+python -m autoflow --input-path workflow.json --output-path workflow-api.json --node-info-path node_info.json
 
 # Short form (flags)
-python -m autoflow -i workflow.json -o workflow-api.json -f object_info.json
+python -m autoflow -i workflow.json -o workflow-api.json -f node_info.json
 ```
 
 - More: [`docs/convert.md`](docs/convert.md)
@@ -218,7 +219,7 @@ flowchart LR
 # api
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api.saveimage.inputs.filename_prefix='autoflow'
 res = api.submit(server_url="http://localhost:8188", wait=True)
 images = res.fetch_images()
@@ -253,15 +254,19 @@ If you're running inside a ComfyUI environment (repo + venv), you can run workfl
   - all `.load()` methods auto-detect input type: [`docs/load-vs-convert.md`](docs/load-vs-convert.md)
   - extract workflows from ComfyUI PNG outputs (no dependencies)
 - **OOP node access**:
-  - `api.ksampler[0].seed = 42` — attribute-style access by class_type
+  - `api.KSampler.seed = 42` — attribute-style access by class_type
   - `api.find(class_type="KSampler")[0].seed = 42` — search + then edit (returns NodeProxy objects)
-  - `api.ksampler[0]._meta` / `.meta` — access node metadata
+  - `api.KSampler._meta` / `.meta` — access node metadata
   - `api["ksampler/seed"]` — path-style access
   - `api["18:17:3/seed"] = 42` — edit nodes inside flattened subgraph exports (ComfyUI-style path IDs)
-  - `flow.nodes.ksampler[0].type` — explicit via `.nodes` for workspace flows
+  - `flow.nodes.KSampler.type` — explicit via `.nodes` for workspace flows
   - `flow.nodes.find(title="NewSubgraphName")[0].path()` — find renamed subgraph instances; prints a stable path like `18:17:3`
   - `flow.extra.ds.scale` — drill into nested dicts with `DictView`
   - `node.properties.models.url` — single-item list-of-dicts drill via `ListView` (otherwise index first)
+  - **Widget-value repr**: `NodeRef`/`NodeSet` display widget values as dicts — `f.nodes.CheckpointLoaderSimple` → `{'nodes.CheckpointLoaderSimple[0]': {'ckpt_name': '...'}}`
+  - **Widget introspection**: `.choices()` returns valid combo options, `.tooltip()` shows help text, `.spec()` gives the raw `node_info` spec
+  - **Tab completion**: curated `__dir__` on `ApiFlow`, `NodeSet`, `FlowTreeNodesView`, and `WidgetValue` — only shows user-facing attrs
+  - **Indexed nodes**: standard Python REPL can't tab-complete `api.KSampler[0].<tab>` — assign to a variable first: `k = api.KSampler[0]` then `k.<tab>`
 - **Mapping** (seeds/paths/prompts):
   - typed callback mapping: [`docs/mapping.md`](docs/mapping.md)
   - declarative string/path mapping: [`docs/map-strings-and-paths.md`](docs/map-strings-and-paths.md)
@@ -282,8 +287,8 @@ If you're running inside a ComfyUI environment (repo + venv), you can run workfl
 | `--input-path` | `-i` | Input workflow JSON file path |
 | `--output-path` | `-o` | Output API format JSON file path |
 | `--server-url` | | ComfyUI server URL (or set `AUTOFLOW_COMFYUI_SERVER_URL`) |
-| `--object-info-path` | `-f` | Path to saved `object_info.json` file |
-| `--download-object-info-path` | | Download `/object_info` and save to file |
+| `--node-info-path` | `-f` | Path to saved `node_info.json` file |
+| `--download-node-info-path` | | Download `/object_info` and save to file |
 | `--submit` | | Submit converted API payload to ComfyUI |
 | `--no-wait` | | Submit without waiting for completion (prints `prompt_id` and exits) |
 | `--no-progress` | | Disable progress output during `--submit` when waiting |

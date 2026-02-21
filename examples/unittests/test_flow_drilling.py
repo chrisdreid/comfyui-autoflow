@@ -19,17 +19,17 @@ from examples.unittests._fixtures import fixture_path
 
 
 class TestFlowSchemaAwareDrilling(unittest.TestCase):
-    def test_seed_requires_object_info(self):
+    def test_seed_requires_node_info(self):
         f = Flow(fixture_path("FLOW.json"))
         with self.assertRaises(NodeInfoError):
             _ = f.nodes.KSampler[0].seed
 
-    def test_seed_works_with_object_info(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+    def test_seed_works_with_node_info(self):
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         self.assertEqual(f.nodes.KSampler[0].seed, 200)
 
     def test_attrs_lists_raw_keys_and_widgets(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         a1 = f.nodes.KSampler[0].attrs()
         a2 = f.nodes.KSampler.attrs()
         # Raw node keys
@@ -42,27 +42,27 @@ class TestFlowSchemaAwareDrilling(unittest.TestCase):
         self.assertIn("seed", a2)
 
     def test_setting_widget_updates_convert(self):
-        f = Flow(fixture_path("FLOW.json"), object_info=fixture_path("object_info.json"))
+        f = Flow(fixture_path("FLOW.json"), node_info=fixture_path("node_info.json"))
         # Modify via a proxy returned from find() (different proxy instance, same underlying node dict)
         n = f.nodes.find(type="KSampler")[0]
         n.seed = 123
-        api = f.convert(object_info=fixture_path("object_info.json"))
+        api = f.convert(node_info=fixture_path("node_info.json"))
         self.assertEqual(api.KSampler[0].seed, 123)
 
-    def test_fetch_object_info_attaches_schema_offline(self):
+    def test_fetch_node_info_attaches_schema_offline(self):
         f = Flow(fixture_path("FLOW.json"))
-        self.assertIsNone(getattr(f, "object_info", None))
-        oi = f.fetch_object_info(fixture_path("object_info.json"))
+        self.assertIsNone(getattr(f, "node_info", None))
+        oi = f.fetch_node_info(fixture_path("node_info.json"))
         self.assertIsInstance(oi, dict)
-        self.assertIsInstance(getattr(f, "object_info", None), dict)
+        self.assertIsInstance(getattr(f, "node_info", None), dict)
         self.assertEqual(f.nodes.KSampler[0].seed, 200)
 
-    def test_fetch_object_info_no_args_requires_env_or_server_url(self):
+    def test_fetch_node_info_no_args_requires_env_or_server_url(self):
         f = Flow(fixture_path("FLOW.json"))
         old = os.environ.pop("AUTOFLOW_COMFYUI_SERVER_URL", None)
         try:
             with self.assertRaises(ValueError):
-                f.fetch_object_info()
+                f.fetch_node_info()
         finally:
             if old is not None:
                 os.environ["AUTOFLOW_COMFYUI_SERVER_URL"] = old

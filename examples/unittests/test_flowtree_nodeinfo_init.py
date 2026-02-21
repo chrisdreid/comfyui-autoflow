@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Flowtree-mode tests for ObjectInfo constructor and fetch ergonomics.
+Flowtree-mode tests for NodeInfo constructor and fetch ergonomics.
 
 These are subprocess-based to ensure AUTOFLOW_MODEL_LAYER=flowtree is honored,
 since model layer selection happens at import time.
@@ -36,7 +36,7 @@ def _env_with_repo_root(extra: dict) -> dict:
     return env
 
 
-class TestFlowtreeObjectInfoInit(unittest.TestCase):
+class TestFlowtreeNodeInfoInit(unittest.TestCase):
     def _run(self, code: str, extra_env: dict | None = None) -> list[str]:
         env = _env_with_repo_root({"AUTOFLOW_MODEL_LAYER": "flowtree"})
         if extra_env:
@@ -50,34 +50,34 @@ class TestFlowtreeObjectInfoInit(unittest.TestCase):
 import os
 from pathlib import Path
 
-from autoflow import ObjectInfo
+from autoflow import NodeInfo
 import autoflow.models as models
 
 td = Path(os.environ["AUTOFLOW_TESTDATA_DIR"])
-oi_path = td / "object_info.json"
+oi_path = td / "node_info.json"
 
-# 1) No env source => empty ObjectInfo (no error)
-os.environ.pop("AUTOFLOW_OBJECT_INFO_SOURCE", None)
-o = ObjectInfo()
+# 1) No env source => empty NodeInfo (no error)
+os.environ.pop("AUTOFLOW_NODE_INFO_SOURCE", None)
+o = NodeInfo()
 print(len(o))
 
 # 2) Env source pointing at file => auto-resolve and populate
-os.environ["AUTOFLOW_OBJECT_INFO_SOURCE"] = str(oi_path)
-o2 = ObjectInfo()
+os.environ["AUTOFLOW_NODE_INFO_SOURCE"] = str(oi_path)
+o2 = NodeInfo()
 print("KSampler" in o2)
 
 # 3) Explicit source= should work without env
-os.environ.pop("AUTOFLOW_OBJECT_INFO_SOURCE", None)
-o3 = ObjectInfo(source=str(oi_path))
+os.environ.pop("AUTOFLOW_NODE_INFO_SOURCE", None)
+o3 = NodeInfo(source=str(oi_path))
 print("KSampler" in o3)
 
 # 4) Instance fetch should mutate in-place.
-# Patch legacy fetch to avoid network and return a fixture-loaded ObjectInfo.
+# Patch legacy fetch to avoid network and return a fixture-loaded NodeInfo.
 def _fake_fetch(cls, server_url=None, *, timeout=0, output_path=None):
-    return models.ObjectInfo.load(oi_path)
-models.ObjectInfo.fetch = classmethod(_fake_fetch)
+    return models.NodeInfo.load(oi_path)
+models.NodeInfo.fetch = classmethod(_fake_fetch)
 
-o4 = ObjectInfo()
+o4 = NodeInfo()
 o4.fetch(server_url="http://example.invalid")
 print("KSampler" in o4)
 """

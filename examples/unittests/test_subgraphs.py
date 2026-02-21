@@ -18,8 +18,8 @@ from autoflow import Flow
 from examples.unittests._fixtures import fixture_path
 
 
-def _mini_object_info():
-    # Minimal object_info for the nodes used in default workflows.
+def _mini_node_info():
+    # Minimal node_info for the nodes used in default workflows.
     # Use API-mode list specs so conversion stays offline.
     return {
         "CheckpointLoaderSimple": {
@@ -94,10 +94,10 @@ class TestSubgraphs(unittest.TestCase):
     def test_default_subgraph_converts_like_default(self):
         wf_flat = json.loads(fixture_path("default.json").read_text(encoding="utf-8"))
         wf_sg = json.loads(fixture_path("default-subgraph.json").read_text(encoding="utf-8"))
-        oi = _mini_object_info()
+        oi = _mini_node_info()
 
-        api_flat = Flow.load(wf_flat).convert(object_info=oi)
-        api_sg = Flow.load(wf_sg).convert(object_info=oi)
+        api_flat = Flow.load(wf_flat).convert(node_info=oi)
+        api_sg = Flow.load(wf_sg).convert(node_info=oi)
 
         # No UUID class_type should remain after flattening.
         for node in api_sg.values():

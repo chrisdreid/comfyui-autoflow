@@ -50,7 +50,7 @@ All `.load()` methods accept multiple input types:
 from autoflow import Flow
 
 flow = Flow.load("workflow.json")
-api = flow.convert(object_info="object_info.json")
+api = flow.convert(node_info="node_info.json")
 api.save("workflow-api.json")
 ```
 
@@ -76,7 +76,7 @@ api = ApiFlow.load("workflow-api.json")
 # api
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api2 = Workflow("workflow-api.json")
 ```
 
@@ -156,12 +156,12 @@ flow.extra.ds.scale = 0.5          # modify (propagates to original)
 flow["last_node_id"]               # dict access still works
 ```
 
-For `ObjectInfo`, path access navigates the schema:
+For `NodeInfo`, path access navigates the schema:
 
 ```python
 # api
-from autoflow import ObjectInfo
-obj = ObjectInfo.load("object_info.json")
+from autoflow import NodeInfo
+obj = NodeInfo.load("node_info.json")
 obj["KSampler/input/required/seed"]  # get seed input spec
 ```
 
@@ -190,5 +190,5 @@ flow.nodes.to_list()               # [node, ...]
 
 ```bash
 # cli
-python -m autoflow --input-path workflow.json --output-path workflow-api.json --object-info-path object_info.json
+python -m autoflow --input-path workflow.json --output-path workflow-api.json --node-info-path node_info.json
 ```

@@ -114,7 +114,7 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
             "last_link_id": 0,
             "extra": {"meta": {"show": "SHOW_A"}},
         }
-        object_info = {
+        node_info = {
             "TestNode": {
                 "input": {
                     "required": {
@@ -125,13 +125,13 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
         }
 
         wf = Flow.load(workflow)
-        api = wf.convert(object_info=object_info)
+        api = wf.convert(node_info=node_info)
         self.assertIsInstance(api.workflow_meta, dict)
         self.assertEqual(api.workflow_meta["meta"]["show"], "SHOW_A")
         self.assertIsInstance(api, ApiFlow)
 
     def test_api_mapping_callback_typed_overwrite_and_link_context(self):
-        object_info = {
+        node_info = {
             "A": {"input": {"required": {"x": ["INT", {"default": 0}]}}},
             "B": {"input": {"required": {"img": ["IMAGE"]}}},
         }
@@ -140,7 +140,7 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
                 "1": {"class_type": "A", "inputs": {"x": 1}},
                 "2": {"class_type": "B", "inputs": {"img": ["1", 0]}},
             },
-            object_info=object_info,
+            node_info=node_info,
             use_api=True,
             workflow_meta={"meta": {"show": "SHOW_A"}},
         )
@@ -193,11 +193,11 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
                 }
             },
         }
-        object_info = {
+        node_info = {
             "TestNode": {"input": {"required": {"seed": ["INT", {"default": 0}]}}},
         }
 
-        api = Flow.load(workflow).convert(object_info=object_info)
+        api = Flow.load(workflow).convert(node_info=node_info)
         # merge overwrites existing input and adds new keys
         self.assertEqual(api["1"]["inputs"]["seed"], 123)
         self.assertEqual(api["1"]["inputs"]["new_key"], 9)
@@ -209,7 +209,7 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
 
         # add-only: should not overwrite existing seed
         workflow["extra"]["autoflow"]["meta"]["nodes"]["1"] = {"mode": "add", "data": {"inputs": {"seed": 555}}}
-        api2 = Flow.load(workflow).convert(object_info=object_info)
+        api2 = Flow.load(workflow).convert(node_info=node_info)
         self.assertEqual(api2["1"]["inputs"]["seed"], 200)
 
         # replace: replace entire node dict
@@ -217,7 +217,7 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
             "mode": "replace",
             "data": {"class_type": "Replaced", "inputs": {"x": [1, 2, 3]}},
         }
-        api3 = Flow.load(workflow).convert(object_info=object_info)
+        api3 = Flow.load(workflow).convert(node_info=node_info)
         self.assertEqual(api3["1"]["class_type"], "Replaced")
         self.assertEqual(api3["1"]["inputs"]["x"], [1, 2, 3])
 
@@ -247,11 +247,11 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
                 }
             },
         }
-        object_info = {
+        node_info = {
             "TestNode": {"input": {"required": {"seed": ["INT", {"default": 0}]}}},
         }
 
-        api = Flow.load(workflow).convert(object_info=object_info)
+        api = Flow.load(workflow).convert(node_info=node_info)
         # *inputs overwrote seed
         self.assertEqual(api["1"]["inputs"]["seed"], 123)
         # +inputs added new key
@@ -272,14 +272,14 @@ class TestConvertMappingAndApiMapping(unittest.TestCase):
             "last_link_id": 0,
             "extra": {"autoflow": {"meta": {"nodes": {"999": {"inputs": {"seed": 1}}}}}},
         }
-        object_info = {
+        node_info = {
             "TestNode": {"input": {"required": {"seed": ["INT", {"default": 0}]}}},
         }
-        r = convert_workflow_with_errors(workflow, object_info=object_info)
+        r = convert_workflow_with_errors(workflow, node_info=node_info)
         self.assertTrue(any("999" in w.message for w in (r.warnings or [])))
 
         # Opt-out should disable patch warnings too.
-        r2 = convert_workflow_with_errors(workflow, object_info=object_info, disable_autoflow_meta=True)
+        r2 = convert_workflow_with_errors(workflow, node_info=node_info, disable_autoflow_meta=True)
         self.assertFalse(any("999" in w.message for w in (r2.warnings or [])))
 
     def test_strict_api_load_rejects_workspace(self):

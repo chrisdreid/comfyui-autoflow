@@ -8,8 +8,9 @@ from .model_layer import (  # noqa: F401
     ApiFlow,
     Flow,
     Workflow,
-    ObjectInfo,
+    NodeInfo,
 )
+from .models import WidgetValue  # noqa: F401
 from .convert import (  # noqa: F401
     ConvertResult,
     WorkflowConverterError,
@@ -49,7 +50,7 @@ __all__ = [
     "ApiFlow",
     "Flow",
     "Workflow",
-    "ObjectInfo",
+    "NodeInfo",
     "ConvertResult",
     "SubmissionResult",
     "ImagesResult",
@@ -71,4 +72,5 @@ __all__ = [
     "map_strings",
     "map_paths",
     "force_recompute",
+    "WidgetValue",
 ]

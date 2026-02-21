@@ -47,23 +47,49 @@ flowchart  LR
 
 ## OOP node access
 - Attribute-style access by class_type:
-  - `api.ksampler[0].seed = 42`
-  - `api.ksampler[0]._meta` / `.meta`
+  - `api.KSampler.seed = 42`
+  - `api.KSampler._meta` / `.meta`
 - Path-style access: `api["ksampler/seed"]`
-- Workspace nodes via `.nodes`: `flow.nodes.ksampler[0].type`
-- Schema-aware drilling for workspace widgets (requires `object_info`):
-  - `flow = Flow("workflow.json", object_info="object_info.json")`
-  - `flow.nodes.KSampler[0].seed`  # maps `widgets_values` list to names using object_info
+- Workspace nodes via `.nodes`: `flow.nodes.KSampler.type`
+- Schema-aware drilling for workspace widgets (requires `node_info`):
+  - `flow = Flow("workflow.json", node_info="node_info.json")`
+  - `flow.nodes.KSampler.seed`  # maps `widgets_values` list to names using node_info
 - Explore available keys/widgets:
-  - `flow.nodes.KSampler[0].attrs()`
-  - `flow.nodes.KSampler.attrs()`  # group: uses first node
+  - `flow.nodes.KSampler.attrs()`  # all keys (including raw node keys)
+  - `flow.nodes.KSampler.choices()` / `.tooltip()` / `.spec()`  # widget introspection
+- Widget introspection via `WidgetValue`:
+  - Widget attributes return `WidgetValue` wrappers (transparent — compares/hashes as raw value)
+  - `api.KSampler.sampler_name.choices()`  — list of valid combo options
+  - `api.KSampler.seed.tooltip()`  — help text from `node_info`
+  - `api.KSampler.seed.spec()`  — raw `node_info` type spec
 - Nested dict drilling: `flow.extra.ds.scale = 0.5`
 - List drilling:
   - If a value is a list (e.g. `node.properties.models`), it’s wrapped as `ListView`.
   - If the list has exactly 1 dict item, `models.url` delegates to `models[0].url`.
   - Otherwise, index first: `models[0].url`
-- All views castable: `dict(api.ksampler[0])`, `list(api.ksampler)`
+- All views castable: `dict(api.KSampler)`, `list(api.KSampler)`
 - more: [`load-vs-convert.md`](load-vs-convert.md)
+
+### Tab completion
+
+All major objects have curated `__dir__` methods — tab completion shows only user-facing attributes:
+
+| Object | Tab-completes to |
+|---|---|
+| `api.` | node class types + `find`, `submit`, `execute`, `save`, `items`, `keys`, `values`, … |
+| `api.KSampler.` | widget attrs (`seed`, `steps`, `cfg`, …) + `set`, `apply`, `first`, `attrs`, `find`, … |
+| `flow.nodes.` | node types + `items`, `keys`, `values`, `find`, `by_path`, … |
+| `node.seed.` | `value`, `choices`, `tooltip`, `spec` |
+
+> **Note:** The standard Python REPL cannot tab-complete expressions with brackets like `api.KSampler[0].<tab>`. Assign to a variable first:
+>
+> ```python
+> k = api.KSampler[0]     # assign the indexed node
+> k.<tab>                  # now tab completes!
+> k.seed.choices()         # widget introspection works
+> ```
+>
+> This is a Python `rlcompleter` limitation. IPython/Jupyter handle bracket expressions natively.
 
 ## Dependency graph (DAG)
 
@@ -131,9 +157,9 @@ Examples:
 import re
 from autoflow import Flow
 
-flow = Flow("workflow.json", object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
 
-# Find by type, then update a widget value (schema-aware when object_info is attached)
+# Find by type, then update a widget value (schema-aware when node_info is attached)
 ksamplers = flow.nodes.find(type="KSampler")
 if not ksamplers:
     raise RuntimeError("No KSampler nodes found in workflow.json")
@@ -158,4 +184,4 @@ same_seed = flow.find(seed=re.compile(r"^123$"), depth=8)
 
 ## Deprecated / experimental switches
 - `AUTOFLOW_MODEL_LAYER` (internal): switches between model implementations for local testing.
-  - more: [`object-info-and-env.md`](object-info-and-env.md)
+  - more: [`node-info-and-env.md`](node-info-and-env.md)

@@ -4,7 +4,7 @@
 Thin compatibility façade.
 
 The implementation was split across:
-- autoflow.models   (Flow/ApiFlow/ObjectInfo/Workflow + drilling helpers)
+- autoflow.models   (Flow/ApiFlow/NodeInfo/Workflow + drilling helpers)
 - autoflow.convert  (conversion core + errors)
 - autoflow.results  (submit + outputs + save helpers)
 - autoflow.net/pngmeta/defaults (stdlib helpers)
@@ -21,7 +21,7 @@ from .model_layer import (  # noqa: F401
     ApiFlow,
     Flow,
     Workflow,
-    ObjectInfo,
+    NodeInfo,
 )
 from .models import DictView  # noqa: F401
 from .convert import (  # noqa: F401
@@ -45,13 +45,13 @@ from .convert import (  # noqa: F401
     workflow_to_api_format_with_errors,
     validate_workflow_data,
     flatten_subgraphs,
-    resolve_object_info,
-    fetch_object_info,
-    fetch_object_info_from_url,
+    resolve_node_info,
+    fetch_node_info,
+    fetch_node_info_from_url,
     load_workflow_from_file,
     save_workflow_to_file,
-    load_object_info_from_file,
-    save_object_info_to_file,
+    load_node_info_from_file,
+    save_node_info_to_file,
     get_widget_input_names,
     align_widgets_values,
 )
@@ -93,7 +93,7 @@ __all__ = [
     "ApiFlow",
     "Flow",
     "Workflow",
-    "ObjectInfo",
+    "NodeInfo",
     "ConvertResult",
     "SubmissionResult",
     "FilesResult",
@@ -117,13 +117,13 @@ __all__ = [
     "workflow_to_api_format_with_errors",
     "validate_workflow_data",
     "flatten_subgraphs",
-    "resolve_object_info",
-    "fetch_object_info",
-    "fetch_object_info_from_url",
+    "resolve_node_info",
+    "fetch_node_info",
+    "fetch_node_info_from_url",
     "load_workflow_from_file",
     "save_workflow_to_file",
-    "load_object_info_from_file",
-    "save_object_info_to_file",
+    "load_node_info_from_file",
+    "save_node_info_to_file",
     "get_widget_input_names",
     "align_widgets_values",
     # helpers

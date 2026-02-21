@@ -5,12 +5,12 @@
 Enable programmatic construction of complete ComfyUI workflow graphs:
 
 ```python
-from autoflow import Flow, ObjectInfo
+from autoflow import Flow, NodeInfo
 
-oi = ObjectInfo.load("object_info.json")
-flow = Flow.create(object_info=oi)
+oi = NodeInfo.load("node_info.json")
+flow = Flow.create(node_info=oi)
 
-# Add nodes with defaults from object_info
+# Add nodes with defaults from node_info
 ckpt = flow.add_node("CheckpointLoaderSimple", ckpt_name="v1-5-pruned.safetensors")
 pos  = flow.add_node("CLIPTextEncode", text="a photo of a cat")
 neg  = flow.add_node("CLIPTextEncode", text="blurry, bad")
@@ -37,9 +37,9 @@ This connects directly to the [InputOutputConnect.md](InputOutputConnect.md) res
 
 ---
 
-## What object_info Provides Per Node Type
+## What node_info Provides Per Node Type
 
-Each entry in `object_info[class_type]` contains:
+Each entry in `node_info[class_type]` contains:
 
 ```python
 oi["KSampler"] = {
@@ -85,16 +85,16 @@ From studying `examples/workflows/workflow.json`, each Flow node has:
     "id": 3,                           # unique int, auto-assigned
     "type": "KSampler",                # from class_type
     "pos": [686, 365],                 # auto-layout or user-specified
-    "size": [378, 538],                # defaults or from object_info hints
+    "size": [378, 538],                # defaults or from node_info hints
     "flags": {},                       # default empty
     "order": 9,                        # execution order, can use toposort
     "mode": 0,                         # 0 = active
-    "inputs": [                        # connection slots (from object_info required+optional)
+    "inputs": [                        # connection slots (from node_info required+optional)
         {"name": "model", "type": "MODEL", "link": null},
         {"name": "positive", "type": "CONDITIONING", "link": null},
         ...
     ],
-    "outputs": [                       # output slots (from object_info output/output_name)
+    "outputs": [                       # output slots (from node_info output/output_name)
         {"name": "LATENT", "type": "LATENT", "slot_index": 0, "links": []}
     ],
     "properties": {
@@ -112,18 +112,18 @@ From studying `examples/workflows/workflow.json`, each Flow node has:
 ```
 add_node(class_type, **widget_overrides):
 
-1. Look up class_type in object_info
+1. Look up class_type in node_info
    - Fail fast if not found
    
-2. Build input slots from object_info["input"]["required"] + ["optional"]
+2. Build input slots from node_info["input"]["required"] + ["optional"]
    - For each connection-only input: create {"name": name, "type": TYPE, "link": null}
    - For each widget input: record its default value
 
-3. Build output slots from object_info["output"] + ["output_name"]
+3. Build output slots from node_info["output"] + ["output_name"]
    - For each output: create {"name": name, "type": TYPE, "slot_index": i, "links": []}
 
 4. Build widgets_values array
-   - Use defaults from object_info specs
+   - Use defaults from node_info specs
    - Override with user-supplied **widget_overrides
    - Order must match get_widget_input_names() order
 
@@ -170,7 +170,7 @@ dst_node.connect(input_name, src_node, output_name_or_index=0):
 ## What `Flow.create()` Needs To Initialize
 
 ```python
-Flow.create(object_info=oi)  # returns:
+Flow.create(node_info=oi)  # returns:
 {
     "last_node_id": 0,
     "last_link_id": 0,
@@ -252,7 +252,7 @@ This is much simpler — no link table, no slots, no positions. Just `{node_id: 
 | Feature | Difficulty | Notes |
 |---|---|---|
 | `Flow.create()` | Easy | Skeleton dict + bypass validation |
-| `add_node()` with defaults from object_info | Medium | Parse input specs, build slots, widgets_values |
+| `add_node()` with defaults from node_info | Medium | Parse input specs, build slots, widgets_values |
 | `connect()` on Flow | Medium-Hard | Link table + both nodes' slot updates |
 | `disconnect()` on Flow | Medium | Link table cleanup |
 | `auto_layout()` (toposort) | Easy-Medium | DAG infra already exists |
@@ -277,7 +277,7 @@ These should be implemented once and shared — the builder would use the same c
 
 1. **`connect()` / `disconnect()` on Flow** — shared foundation for both builder and editor
 2. **`Flow.create()`** — empty flow skeleton
-3. **`flow.add_node()`** — object_info-driven node construction with defaults
+3. **`flow.add_node()`** — node_info-driven node construction with defaults
 4. **`auto_layout()`** — toposort-based positioning
 5. **`ApiFlow.create()` / `api.add_node()`** — simpler variant for API-only users
 6. **`node.connections` / `node.outputs`** — read-only inspection (from InputOutputConnect.md)

@@ -31,8 +31,8 @@ This page is intentionally short. Each feature links to the relevant docs for de
 - **Subgraphs (nested) supported**: Flattens `definitions.subgraphs` into a normal renderable API payload.  
   - Details: [`docs/convert.md`](docs/convert.md), tests: [`examples/unittests/test_subgraphs.py`](examples/unittests/test_subgraphs.py)
 
-- **Offline or online schema**: Convert using saved `object_info.json` (reproducible, no server), or fetch `/object_info` from a running ComfyUI instance (explicit).  
-  - Details: [`docs/object-info-and-env.md`](docs/object-info-and-env.md)
+- **Offline or online schema**: Convert using saved `node_info.json` (reproducible, no server), or fetch `/object_info` from a running ComfyUI instance (explicit).  
+  - Details: [`docs/node-info-and-env.md`](docs/node-info-and-env.md)
 
 ---
 
@@ -50,6 +50,10 @@ This page is intentionally short. Each feature links to the relevant docs for de
 
 - **Dot syntax + find**: Easy node access and edits (inputs, seeds, etc.) with `.find(...)` helpers.  
   - Details: [`README.md`](README.md) (OOP node access), [`docs/convert.md`](docs/convert.md) (subgraph editing)
+
+- **Widget-value repr**: `NodeRef` and `NodeSet` display widget values as dicts — e.g. `f.nodes.CheckpointLoaderSimple` → `{'nodes.CheckpointLoaderSimple[0]': {'ckpt_name': 'sd_xl_base_1.0.safetensors'}}`.
+
+- **Widget introspection**: `.choices()` returns valid combo options, `.tooltip()` shows help text, `.spec()` gives the raw `node_info` spec — all available on any input attribute.
 
 - **Stable addressing**: `.path()` / `.address()` helpers for repeatable targeting (including flattened subgraph-style IDs like `18:17:3`).  
   - Details: [`docs/convert.md`](docs/convert.md)
@@ -101,5 +105,5 @@ This page is intentionally short. Each feature links to the relevant docs for de
   - Details: [`docs/submit-and-images.md`](docs/submit-and-images.md)
 
 - **Network is explicit**: No surprise server calls unless you opt into online conversion/submission.  
-  - Details: [`docs/object-info-and-env.md`](docs/object-info-and-env.md), [`docs/submit-and-images.md`](docs/submit-and-images.md)
+  - Details: [`docs/node-info-and-env.md`](docs/node-info-and-env.md), [`docs/submit-and-images.md`](docs/submit-and-images.md)
 

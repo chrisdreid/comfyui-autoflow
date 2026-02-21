@@ -23,7 +23,7 @@ flowchart LR
 from autoflow import Workflow
 from autoflow.map import map_strings
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 
 spec = {
     "replacements": {
@@ -50,7 +50,7 @@ from autoflow.map import map_paths
 
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 spec = {
     "replacements": {
         "literal": {"${ROOT}": "/data/project"},
