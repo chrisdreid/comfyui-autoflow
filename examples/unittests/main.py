@@ -1663,8 +1663,8 @@ function toggleDetail(row) {{
   const detail = row.nextElementSibling;
   if (detail && detail.classList.contains('detail-row')) {{
     const arrow = row.querySelector('.arrow-col');
-    if (detail.style.display === 'none' || !detail.style.display) {{
-      detail.style.display = '';
+    if (detail.style.display === 'none') {{
+      detail.style.display = 'table-row';
       if (arrow) arrow.textContent = '▼';
     }} else {{
       detail.style.display = 'none';
