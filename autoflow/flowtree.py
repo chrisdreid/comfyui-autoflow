@@ -804,17 +804,7 @@ class NodeRef:
 
     def __repr__(self) -> str:
         w = self._widget_dict()
-        if w:
-            return repr({str(self.where): w})
-        t = self.type
-        title = self.title
-        bits = [f"{self.kind}", f"id={self.addr!r}"]
-        if t:
-            bits.append(f"type={t!r}")
-        if title:
-            bits.append(f"title={title!r}")
-        bits.append(f"where={self.where!r}")
-        return "<NodeRef " + " ".join(bits) + ">"
+        return repr({str(self.where): w})
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -986,6 +976,54 @@ class FlowTreeNodesView:
         if not isinstance(nodes, list):
             return []
         return [self[i] for i in range(len(nodes))]
+
+    def _as_dict(self) -> Dict[str, Any]:
+        """Build {nodes.Type[i]: widget_dict} for all nodes."""
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        if not isinstance(nodes, list):
+            return {}
+        type_counts: Dict[str, int] = {}
+        out: Dict[str, Any] = {}
+        for idx, n in enumerate(nodes):
+            if not isinstance(n, dict):
+                continue
+            t = n.get("type", f"node_{idx}")
+            i = type_counts.get(t, 0)
+            type_counts[t] = i + 1
+            key = f"nodes.{t}[{i}]"
+            try:
+                ref = self[idx]
+                out[key] = ref._widget_dict()
+            except Exception:
+                out[key] = {}
+        return out
+
+    def __repr__(self) -> str:
+        d = self._as_dict()
+        if not d:
+            return "<FlowTreeNodesView (empty)>"
+        return repr(d)
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def items(self) -> list:
+        return list(self._as_dict().items())
+
+    def keys(self) -> list:
+        return list(self._as_dict().keys())
+
+    def values(self) -> list:
+        return list(self._as_dict().values())
+
+    def __iter__(self):
+        return iter(self._as_dict())
+
+    def __len__(self) -> int:
+        flow = self._flowtree._flow
+        nodes = flow.get("nodes", [])
+        return len(nodes) if isinstance(nodes, list) else 0
 
     def to_dict(self) -> Dict[str, NodeRef]:
         flow = self._flowtree._flow
