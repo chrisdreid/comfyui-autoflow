@@ -358,20 +358,21 @@ def api_mapping(
     if not cb_list:
         return flow if in_place else copy.deepcopy(flow)
 
-    out = flow if in_place else copy.deepcopy(flow)
-
-    # Prefer attached schema on ApiFlow if present.
+    # Read attached metadata from the ORIGINAL flow before any copy, since these
+    # may be @property on wrapper classes (e.g. flowtree ApiFlow) that won't
+    # survive deepcopy (no __deepcopy__/__reduce__ on MutableMapping wrappers).
     if node_info is None:
         node_info = getattr(flow, "node_info", None)
+    workflow_extra_attr = getattr(flow, "workflow_meta", None)
 
-    # Preserve attached attrs when deep-copying dict subclasses.
-    if not in_place:
-        for k in ("node_info", "use_api", "workflow_meta"):
-            if hasattr(flow, k):
-                try:
-                    setattr(out, k, getattr(flow, k))
-                except Exception:
-                    pass
+    if in_place:
+        out = flow
+    else:
+        # Flowtree ApiFlow overrides items()/keys() with class_type-based keys,
+        # so dict(flow) or flow.items() won't produce raw node-id keyed data.
+        # Use unwrap() to get the underlying legacy dict when available.
+        raw = getattr(flow, "unwrap", lambda: flow)()
+        out = copy.deepcopy(dict(raw))
 
     for node_id, node in out.items():
         if not isinstance(node, dict):
@@ -382,7 +383,7 @@ def api_mapping(
 
         class_type = node.get("class_type") if isinstance(node.get("class_type"), str) else None
         meta = node.get("_meta") if isinstance(node.get("_meta"), dict) else {}
-        workflow_extra = getattr(out, "workflow_meta", None)
+        workflow_extra = workflow_extra_attr
         if not isinstance(workflow_extra, dict):
             workflow_extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else None
 
