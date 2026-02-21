@@ -351,7 +351,7 @@ class ApiFlow(_MappingWrapper):
             # Only show scalar widget values (skip link arrays)
             widgets = {k: v for k, v in inputs.items() if not isinstance(v, list)} if isinstance(inputs, dict) else {}
             groups[key] = widgets
-        return repr({"ApiFlow": groups})
+        return f"ApiFlow({repr(groups)})"
 
     @property
     def dag(self):
@@ -485,7 +485,7 @@ class Flow(_MappingWrapper):
         nv = self.nodes
         links = self._flow.get("links", [])
         link_count = len(links) if isinstance(links, list) else 0
-        return repr({"Flow": {"nodes": nv._as_dict(), "links": link_count}})
+        return f"Flow(nodes={repr(nv._as_dict())}, links={link_count})"
 
     @property
     def dag(self):
@@ -618,10 +618,8 @@ class NodeInfo(_MappingWrapper):
     def __repr__(self) -> str:
         count = len(self._oi)
         types = sorted(self._oi.keys())[:10]
-        summary: Dict[str, Any] = {"count": count, "types": types}
-        if count > 10:
-            summary["types_truncated"] = True
-        return repr({"NodeInfo": summary})
+        more = f", +{count - 10} more" if count > 10 else ""
+        return f"NodeInfo(count={count}, types={types!r}{more})"
 
 
 class Workflow:
