@@ -450,6 +450,7 @@ class Flow(_MappingWrapper):
         return self._flow.fetch_node_info(*args, **kwargs)
 
     def convert(self, *args: Any, **kwargs: Any) -> ApiFlow:
+        kwargs.setdefault("include_meta", True)
         api = self._flow.convert(*args, **kwargs)
         return ApiFlow(api)
 
@@ -798,6 +799,9 @@ class NodeRef:
     def __setattr__(self, name: str, value: Any) -> None:
         if name in ("_p", "kind", "addr", "group", "index", "path", "where", "dictpath"):
             return object.__setattr__(self, name, value)
+        if name in ("_meta", "meta"):
+            self._data_ref()["_meta"] = value
+            return
         return setattr(self._p, name, value)
 
     # mapping protocol (so dict(node) works)
