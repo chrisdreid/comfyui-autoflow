@@ -611,6 +611,48 @@ def _get_input_spec(class_type: str, input_name: str, node_info: Optional[Dict[s
     return None
 
 
+# ---------------------------------------------------------------------------
+# Spec-format extractors (extend these lists to support new node-info formats)
+# ---------------------------------------------------------------------------
+
+def _choices_from_combo(spec: list) -> Optional[List[str]]:
+    """New format: ["COMBO", {"options": [...]}]"""
+    if (len(spec) >= 2
+            and spec[0] == "COMBO"
+            and isinstance(spec[1], dict)
+            and "options" in spec[1]):
+        return list(spec[1]["options"])
+    return None
+
+
+def _choices_from_legacy_list(spec: list) -> Optional[List[str]]:
+    """Legacy format: [["choice1", "choice2", ...], {...}]"""
+    if isinstance(spec[0], list):
+        return list(spec[0])
+    return None
+
+
+# Add new choice extractors here as ComfyUI introduces new formats.
+_CHOICES_EXTRACTORS: List[Callable[[list], Optional[List[str]]]] = [
+    _choices_from_combo,
+    _choices_from_legacy_list,
+]
+
+
+def _tooltip_from_spec_dict(spec: list) -> Optional[str]:
+    """Both formats store tooltip in spec[1] dict: ["TYPE", {"tooltip": "..."}]"""
+    if len(spec) >= 2 and isinstance(spec[1], dict):
+        tt = spec[1].get("tooltip")
+        return tt if isinstance(tt, str) else None
+    return None
+
+
+# Add new tooltip extractors here as ComfyUI introduces new formats.
+_TOOLTIP_EXTRACTORS: List[Callable[[list], Optional[str]]] = [
+    _tooltip_from_spec_dict,
+]
+
+
 class WidgetValue:
     """Transparent wrapper around a widget value, adding `.choices()` and `.tooltip()`.
 
@@ -703,15 +745,23 @@ class WidgetValue:
     def choices(self) -> Optional[List[str]]:
         """Return the list of valid choices if this is a combo widget, else None."""
         spec = self._spec
-        if isinstance(spec, list) and len(spec) > 0 and isinstance(spec[0], list):
-            return list(spec[0])
+        if not isinstance(spec, list) or len(spec) == 0:
+            return None
+        for extractor in _CHOICES_EXTRACTORS:
+            result = extractor(spec)
+            if result is not None:
+                return result
         return None
 
     def tooltip(self) -> Optional[str]:
         """Return the tooltip string for this widget, if one exists."""
         spec = self._spec
-        if isinstance(spec, list) and len(spec) >= 2 and isinstance(spec[1], dict):
-            return spec[1].get("tooltip")
+        if not isinstance(spec, list) or len(spec) < 2:
+            return None
+        for extractor in _TOOLTIP_EXTRACTORS:
+            result = extractor(spec)
+            if result is not None:
+                return result
         return None
 
     def spec(self) -> Optional[list]:
@@ -753,6 +803,31 @@ class FlowNodeProxy(_DictMixin):
 
     def __getattr__(self, name: str) -> Any:
         node = self._get_data()
+        parent = object.__getattribute__(self, "_parent")
+        node_info = getattr(parent, "node_info", None)
+
+        # When node_info is available, widget names take priority over raw
+        # node-dict keys to avoid collisions (e.g. LiteGraph's "mode" vs
+        # a PorterDuffImageComposite "mode" widget).
+        if node_info is not None:
+            try:
+                widget_names = get_widget_input_names(self.type, node_info=node_info, use_api=True)
+            except NodeInfoError:
+                widget_names = []
+
+            if name in widget_names:
+                wv = align_widgets_values(self.type, list(self.widgets_values or []), widget_names, node_info=node_info)
+                widget_map = {k: wv[i] for i, k in enumerate(widget_names) if i < len(wv)}
+                if name in widget_map:
+                    val = widget_map[name]
+                    if isinstance(val, dict) and not isinstance(val, DictView):
+                        return DictView(val)
+                    if isinstance(val, list) and not isinstance(val, ListView):
+                        return ListView(val)
+                    spec = _get_input_spec(self.type, name, node_info)
+                    return WidgetValue(val, spec)
+
+        # Fall back to raw node-dict keys (id, type, pos, size, flags, etc.)
         if name in node:
             val = node[name]
             if isinstance(val, dict) and not isinstance(val, DictView):
@@ -761,30 +836,13 @@ class FlowNodeProxy(_DictMixin):
                 return ListView(val)
             return val
 
-        parent = object.__getattribute__(self, "_parent")
-        node_info = getattr(parent, "node_info", None)
+        # No node_info at all — raise a helpful error
         if node_info is None:
             raise NodeInfoError(
                 f"Cannot drill widget '{name}' on Flow node {self.id} ({self.type}). "
                 f"This Flow has no node_info. Attach one via Flow(..., node_info=...), "
                 f"or call flow.fetch_node_info(...)."
             )
-
-        try:
-            widget_names = get_widget_input_names(self.type, node_info=node_info, use_api=True)
-        except NodeInfoError as e:
-            raise NodeInfoError(f"Cannot resolve widgets for Flow node {self.id} ({self.type}): {e}") from None
-
-        wv = align_widgets_values(self.type, list(self.widgets_values or []), widget_names, node_info=node_info)
-        widget_map = {k: wv[i] for i, k in enumerate(widget_names) if i < len(wv)}
-        if name in widget_map:
-            val = widget_map[name]
-            if isinstance(val, dict) and not isinstance(val, DictView):
-                return DictView(val)
-            if isinstance(val, list) and not isinstance(val, ListView):
-                return ListView(val)
-            spec = _get_input_spec(self.type, name, node_info)
-            return WidgetValue(val, spec)
 
         raise AttributeError(
             f"Node {self.id} ({self.type}) has no attribute or widget '{name}'. "
