@@ -337,7 +337,21 @@ class ApiFlow(_MappingWrapper):
         return NodeSet.from_apiflow_group(self, group_name=name, matches=matches)
 
     def __repr__(self) -> str:
-        return f"<ApiFlow(flowtree) count={len(self._api)}>"
+        # Show grouped nodes with widget dicts
+        groups: Dict[str, Any] = {}
+        type_counts: Dict[str, int] = {}
+        for nid, node in self._api.items():
+            if not isinstance(node, dict):
+                continue
+            ct = node.get("class_type", f"node_{nid}")
+            i = type_counts.get(ct, 0)
+            type_counts[ct] = i + 1
+            key = f"{ct}[{i}]"
+            inputs = node.get("inputs", {})
+            # Only show scalar widget values (skip link arrays)
+            widgets = {k: v for k, v in inputs.items() if not isinstance(v, list)} if isinstance(inputs, dict) else {}
+            groups[key] = widgets
+        return repr({"ApiFlow": groups})
 
     @property
     def dag(self):
@@ -468,9 +482,10 @@ class Flow(_MappingWrapper):
         return getattr(self._flow, name)
 
     def __repr__(self) -> str:
-        nodes = self._flow.get("nodes", [])
+        nv = self.nodes
         links = self._flow.get("links", [])
-        return f"<Flow(flowtree) nodes={len(nodes) if isinstance(nodes, list) else 0} links={len(links) if isinstance(links, list) else 0}>"
+        link_count = len(links) if isinstance(links, list) else 0
+        return repr({"Flow": {"nodes": nv._as_dict(), "links": link_count}})
 
     @property
     def dag(self):
@@ -601,7 +616,12 @@ class NodeInfo(_MappingWrapper):
         return getattr(self._oi, name)
 
     def __repr__(self) -> str:
-        return f"<NodeInfo(flowtree) count={len(self._oi)}>"
+        count = len(self._oi)
+        types = sorted(self._oi.keys())[:10]
+        summary: Dict[str, Any] = {"count": count, "types": types}
+        if count > 10:
+            summary["types_truncated"] = True
+        return repr({"NodeInfo": summary})
 
 
 class Workflow:
@@ -895,15 +915,11 @@ class NodeSet:
         return sorted(base)
 
     def __repr__(self) -> str:
-        # Show widget dicts for all nodes (consistent with NodeRef.__repr__)
+        # Always show widget dicts for all nodes (consistent dict format)
         combined: Dict[str, Any] = {}
         for n in self._nodes:
-            w = n._widget_dict()
-            if w:
-                combined[str(n.where)] = w
-        if combined:
-            return repr(combined)
-        return f"<NodeSet kind={self._kind!r} count={len(self._nodes)} path={self._set_path!r}>"
+            combined[str(n.where)] = n._widget_dict()
+        return repr(combined)
 
     def __str__(self) -> str:
         return self.__repr__()
