@@ -3,7 +3,7 @@
 ```mermaid
 flowchart TD
   start["Start"] --> checkShape["Is input workflow.json or workflow-api.json?"]
-  checkShape -->|"workflow.json"| needInfo["Need object_info (file or /object_info)"]
+  checkShape -->|"workflow.json"| needInfo["Need node_info (file or /object_info)"]
   checkShape -->|"workflow-api.json"| submit["Submit ApiFlow"]
   needInfo --> convert["Convert to ApiFlow"]
   convert --> submit
@@ -35,8 +35,8 @@ flowchart TD
 
 - Use `convert_with_errors()` to see detailed error/warning diagnostics
 - Check `ConvertResult.skipped_nodes` — skipped nodes usually mean:
-  - Missing entry in `object_info` for the node's `class_type`
-  - The node belongs to a custom node pack not present in the object_info
+  - Missing entry in `node_info` for the node's `class_type`
+  - The node belongs to a custom node pack not present in the node_info
 
 ```python
 result = autoflow.convert_workflow_with_errors(workflow)

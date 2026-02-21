@@ -2,7 +2,7 @@
 """
 Console (no FastAPI) example: load a workflow JSON from disk and convert it to API format.
 
-This uses *file mode* by default (object_info JSON file), so it does NOT require a running
+This uses *file mode* by default (node_info JSON file), so it does NOT require a running
 ComfyUI server.
 
 Resolution order:
@@ -27,10 +27,10 @@ def main(argv: Optional[list] = None) -> int:
         help="Path to workflow JSON (required)",
     )
     parser.add_argument(
-        "--object-info", "-f",
+        "--node-info", "-f",
         default=None,
         help=(
-            "Path to object_info JSON. "
+            "Path to node_info JSON. "
             "If omitted and AUTOFLOW_COMFYUI_SERVER_URL is set, fetches from server."
         ),
     )
@@ -61,14 +61,14 @@ def main(argv: Optional[list] = None) -> int:
         print(f"ERROR: workflow file not found: {workflow_path}")
         return 1
 
-    # Determine object_info source
-    object_info_path = None
-    if args.object_info:
-        object_info_path = Path(args.object_info)
+    # Determine node_info source
+    node_info_path = None
+    if args.node_info:
+        node_info_path = Path(args.node_info)
     else:
-        env_obj = os.environ.get("AUTOFLOW_OBJECT_INFO_PATH")
+        env_obj = os.environ.get("AUTOFLOW_NODE_INFO_PATH")
         if env_obj:
-            object_info_path = Path(env_obj)
+            node_info_path = Path(env_obj)
         # If neither provided, will use AUTOFLOW_COMFYUI_SERVER_URL if set
 
     # Determine output path
@@ -79,7 +79,7 @@ def main(argv: Optional[list] = None) -> int:
 
     flow = Flow.load(workflow_path)
     result = flow.convert_with_errors(
-        object_info=object_info_path,
+        node_info=node_info_path,
         timeout=args.timeout,
         include_meta=args.include_meta,
         output_path=output_path,

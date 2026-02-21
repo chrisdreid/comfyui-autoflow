@@ -97,7 +97,7 @@ from autoflow import Flow
 import re
 from pathlib import Path
 td = Path(os.environ["AUTOFLOW_TESTDATA_DIR"])
-f = Flow.load(str(td / "FLOW.json"), object_info=str(td / "object_info.json"))
+f = Flow.load(str(td / "FLOW.json"), node_info=str(td / "node_info.json"))
 hits = f.nodes.find(type="KSampler")
 print(type(hits).__name__)
 print(bool(hits.paths()))
@@ -128,7 +128,7 @@ net_mod.http_json = fake_http_json
 try:
     sub = f.submit(
         server_url="http://example.invalid",
-        object_info=td / "object_info.json",
+        node_info=td / "node_info.json",
         wait=False,
         fetch_outputs=False,
     )

@@ -7,7 +7,7 @@
 Each node's `inputs` dict contains both **widget values** and **connection refs**:
 
 ```python
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 
 # Widget value — plain scalar
 api.ksampler[0].seed          # → 696969
@@ -40,10 +40,10 @@ Connections live in the **link table** (`flow["links"]`), not on the node:
 Nodes reference links by ID in their `inputs[].link` and `outputs[].links[]` fields.
 
 Widget values are in `widgets_values` (positional array). `FlowNodeProxy.__getattr__` maps
-widget names to indices via `object_info`, so dot notation works for widgets:
+widget names to indices via `node_info`, so dot notation works for widgets:
 ```python
-flow = Flow("workflow.json", object_info="object_info.json")
-flow.nodes.ksampler[0].seed   # ✅ resolves via object_info widget map
+flow = Flow("workflow.json", node_info="node_info.json")
+flow.nodes.ksampler[0].seed   # ✅ resolves via node_info widget map
 ```
 
 But connections are only accessible via raw data:

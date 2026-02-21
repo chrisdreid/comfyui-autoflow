@@ -10,13 +10,13 @@ from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
-class ObjectInfoOrigin:
+class NodeInfoOrigin:
     """
-    Metadata describing how an object_info dict was obtained.
+    Metadata describing how an node_info dict was obtained.
 
     - requested: what the caller/environment requested (token, URL, path, etc.)
     - resolved: what we actually loaded from ("dict", "file", "url", "modules", "server", or None)
-    - via_env: whether AUTOFLOW_OBJECT_INFO_SOURCE was used
+    - via_env: whether AUTOFLOW_NODE_INFO_SOURCE was used
     - effective_server_url: when resolved from a server, the effective base URL used
     - note: extra context (e.g. fallback details)
     """

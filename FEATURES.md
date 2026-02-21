@@ -31,8 +31,8 @@ This page is intentionally short. Each feature links to the relevant docs for de
 - **Subgraphs (nested) supported**: Flattens `definitions.subgraphs` into a normal renderable API payload.  
   - Details: [`docs/convert.md`](docs/convert.md), tests: [`examples/unittests/test_subgraphs.py`](examples/unittests/test_subgraphs.py)
 
-- **Offline or online schema**: Convert using saved `object_info.json` (reproducible, no server), or fetch `/object_info` from a running ComfyUI instance (explicit).  
-  - Details: [`docs/object-info-and-env.md`](docs/object-info-and-env.md)
+- **Offline or online schema**: Convert using saved `node_info.json` (reproducible, no server), or fetch `/object_info` from a running ComfyUI instance (explicit).  
+  - Details: [`docs/node-info-and-env.md`](docs/node-info-and-env.md)
 
 ---
 
@@ -101,5 +101,5 @@ This page is intentionally short. Each feature links to the relevant docs for de
   - Details: [`docs/submit-and-images.md`](docs/submit-and-images.md)
 
 - **Network is explicit**: No surprise server calls unless you opt into online conversion/submission.  
-  - Details: [`docs/object-info-and-env.md`](docs/object-info-and-env.md), [`docs/submit-and-images.md`](docs/submit-and-images.md)
+  - Details: [`docs/node-info-and-env.md`](docs/node-info-and-env.md), [`docs/submit-and-images.md`](docs/submit-and-images.md)
 

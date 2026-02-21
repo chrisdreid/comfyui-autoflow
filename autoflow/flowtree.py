@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Iterator, MutableMapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from functools import wraps
 
 from . import models as _legacy
-from .convert import normalize_server_url, WorkflowConverterError, resolve_object_info_with_origin
+from .convert import normalize_server_url, WorkflowConverterError, resolve_node_info_with_origin
 from .defaults import DEFAULT_HTTP_TIMEOUT_S
 from .defaults import (
     DEFAULT_FETCH_IMAGES,
@@ -234,14 +235,14 @@ class ApiFlow(_MappingWrapper):
                 allow_none=True,
             )
         timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
-        if "object_info" in kwargs:
-            oi_in = kwargs.get("object_info")
-            # Preserve source metadata when caller passes flowtree ObjectInfo.
-            if isinstance(oi_in, ObjectInfo):
-                kwargs["object_info"] = oi_in._oi
+        if "node_info" in kwargs:
+            oi_in = kwargs.get("node_info")
+            # Preserve source metadata when caller passes flowtree NodeInfo.
+            if isinstance(oi_in, NodeInfo):
+                kwargs["node_info"] = oi_in._oi
         else:
-            # Auto-resolve from env (and keep env provenance in ObjectInfo.source).
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            # Auto-resolve from env (and keep env provenance in NodeInfo.source).
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 kwargs.get("server_url"),
                 timeout,
@@ -249,12 +250,12 @@ class ApiFlow(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is not None:
-                oi_obj = _legacy.ObjectInfo(oi_dict)
+                oi_obj = _legacy.NodeInfo(oi_dict)
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
-                kwargs["object_info"] = oi_obj
+                kwargs["node_info"] = oi_obj
         api = x if isinstance(x, _legacy.ApiFlow) else _legacy.ApiFlow(x, **kwargs)
         self._api = api
         self._data = api  # underlying is a dict subclass
@@ -264,8 +265,8 @@ class ApiFlow(_MappingWrapper):
         return cls(x, **kwargs)
 
     @property
-    def object_info(self):
-        return getattr(self._api, "object_info", None)
+    def node_info(self):
+        return getattr(self._api, "node_info", None)
 
     @property
     def use_api(self):
@@ -353,12 +354,12 @@ class Flow(_MappingWrapper):
                 allow_none=True,
             )
         timeout = kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT_S)
-        if "object_info" in kwargs:
-            oi_in = kwargs.get("object_info")
-            if isinstance(oi_in, ObjectInfo):
-                kwargs["object_info"] = oi_in._oi
+        if "node_info" in kwargs:
+            oi_in = kwargs.get("node_info")
+            if isinstance(oi_in, NodeInfo):
+                kwargs["node_info"] = oi_in._oi
         else:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 kwargs.get("server_url"),
                 timeout,
@@ -366,15 +367,26 @@ class Flow(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is not None:
-                oi_obj = _legacy.ObjectInfo(oi_dict)
+                oi_obj = _legacy.NodeInfo(oi_dict)
                 setattr(oi_obj, "_autoflow_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
-                kwargs["object_info"] = oi_obj
+                kwargs["node_info"] = oi_obj
         f = x if isinstance(x, _legacy.Flow) else _legacy.Flow(x, **kwargs)
         self._flow = f
         self._data = f
+        # Warn if node_info could not be resolved.
+        if getattr(f, "node_info", None) is None:
+            warnings.warn(
+                "Flow created without node_info — widget access and tab completion will be limited.\n"
+                "Options:\n"
+                "  • Set AUTOFLOW_COMFYUI_SERVER_URL env var (auto-fetches)\n"
+                "  • Pass node_info= to Flow()\n"
+                "  • Call flow.fetch_node_info(server_url=...)\n"
+                "See: docs/node-info-and-env.md",
+                UserWarning, stacklevel=2,
+            )
 
     @classmethod
     def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "Flow":
@@ -385,8 +397,8 @@ class Flow(_MappingWrapper):
         return FlowTreeNodesView(self)
 
     @property
-    def object_info(self):
-        return getattr(self._flow, "object_info", None)
+    def node_info(self):
+        return getattr(self._flow, "node_info", None)
 
     @property
     def workflow_meta(self):
@@ -399,8 +411,8 @@ class Flow(_MappingWrapper):
     def find(self, **kwargs: Any):
         return self.nodes.find(**kwargs)
 
-    def fetch_object_info(self, *args: Any, **kwargs: Any):
-        return self._flow.fetch_object_info(*args, **kwargs)
+    def fetch_node_info(self, *args: Any, **kwargs: Any):
+        return self._flow.fetch_node_info(*args, **kwargs)
 
     def convert(self, *args: Any, **kwargs: Any) -> ApiFlow:
         api = self._flow.convert(*args, **kwargs)
@@ -415,7 +427,7 @@ class Flow(_MappingWrapper):
     def execute(
         self,
         *,
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT_S,
         include_meta: bool = False,
         convert_callbacks: Optional[Any] = None,
@@ -434,7 +446,7 @@ class Flow(_MappingWrapper):
         `submit(server_url=...)` instead.
         """
         api = self._flow.convert(
-            object_info=object_info,
+            node_info=node_info,
             server_url=None,
             timeout=timeout,
             include_meta=include_meta,
@@ -466,21 +478,21 @@ class Flow(_MappingWrapper):
         return getattr(self._flow, "dag")
 
 
-class ObjectInfo(_MappingWrapper):
-    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.ObjectInfo]] = None, **kwargs: Any):
+class NodeInfo(_MappingWrapper):
+    def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.NodeInfo]] = None, **kwargs: Any):
         """
-        Create an ObjectInfo wrapper.
+        Create an NodeInfo wrapper.
 
         Supported inputs (x or source=):
-        - dict-like object_info
-        - file path to object_info.json
-        - URL to a JSON object_info
+        - dict-like node_info
+        - file path to node_info.json
+        - URL to a JSON node_info
         - "modules" / "from_comfyui_modules" to load from local ComfyUI modules
         - "fetch" / "server" when server_url (or AUTOFLOW_COMFYUI_SERVER_URL) is available
 
         Default behavior (when x and source are omitted):
-        - If AUTOFLOW_OBJECT_INFO_SOURCE (or server_url) is set, object_info is auto-resolved.
-        - Otherwise, an empty ObjectInfo is created (no error).
+        - If AUTOFLOW_NODE_INFO_SOURCE (or server_url) is set, node_info is auto-resolved.
+        - Otherwise, an empty NodeInfo is created (no error).
         """
         source = kwargs.pop("source", None)
         server_url = kwargs.pop("server_url", None)
@@ -490,10 +502,10 @@ class ObjectInfo(_MappingWrapper):
         # Prefer explicit x over source= for backwards compatibility.
         inp = x if x is not None else source
 
-        if isinstance(inp, _legacy.ObjectInfo):
+        if isinstance(inp, _legacy.NodeInfo):
             oi = inp
         elif inp is not None:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 inp,
                 server_url,
                 timeout,
@@ -501,14 +513,14 @@ class ObjectInfo(_MappingWrapper):
                 require_source=True,
             )
             if oi_dict is None:  # pragma: no cover (resolver should raise when require_source=True)
-                raise WorkflowConverterError("Missing object_info source. Pass source= or set AUTOFLOW_OBJECT_INFO_SOURCE.")
-            oi = _legacy.ObjectInfo(oi_dict)
+                raise WorkflowConverterError("Missing node_info source. Pass source= or set AUTOFLOW_NODE_INFO_SOURCE.")
+            oi = _legacy.NodeInfo(oi_dict)
             setattr(oi, "_autoflow_origin", origin)
             s = getattr(oi, "source", None)
             if isinstance(s, str) and s:
                 setattr(oi, "_autoflow_source", s)
         else:
-            oi_dict, _use_api, origin = resolve_object_info_with_origin(
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
                 server_url,
                 timeout,
@@ -516,9 +528,9 @@ class ObjectInfo(_MappingWrapper):
                 require_source=False,
             )
             if oi_dict is None:
-                oi = _legacy.ObjectInfo({})
+                oi = _legacy.NodeInfo({})
             else:
-                oi = _legacy.ObjectInfo(oi_dict)
+                oi = _legacy.NodeInfo(oi_dict)
                 setattr(oi, "_autoflow_origin", origin)
                 s = getattr(oi, "source", None)
                 if isinstance(s, str) and s:
@@ -528,12 +540,12 @@ class ObjectInfo(_MappingWrapper):
         self._data = oi
 
     @classmethod
-    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "ObjectInfo":
+    def load(cls, x: Union[str, Path, bytes, Dict[str, Any]], **kwargs: Any) -> "NodeInfo":
         return cls(x, **kwargs)
 
     @classmethod
-    def from_comfyui_modules(cls) -> "ObjectInfo":
-        return cls(_legacy.ObjectInfo.from_comfyui_modules())
+    def from_comfyui_modules(cls) -> "NodeInfo":
+        return cls(_legacy.NodeInfo.from_comfyui_modules())
 
     class _DualMethod:
         """
@@ -564,14 +576,14 @@ class ObjectInfo(_MappingWrapper):
             return _bound
 
     @staticmethod
-    def _fetch_new(cls, *args: Any, **kwargs: Any) -> "ObjectInfo":
-        """Fetch object_info from server and return a new ObjectInfo."""
-        return cls(_legacy.ObjectInfo.fetch(*args, **kwargs))
+    def _fetch_new(cls, *args: Any, **kwargs: Any) -> "NodeInfo":
+        """Fetch node_info from server and return a new NodeInfo."""
+        return cls(_legacy.NodeInfo.fetch(*args, **kwargs))
 
     @staticmethod
-    def _fetch_inplace(self, *args: Any, **kwargs: Any) -> "ObjectInfo":
-        """Fetch object_info from server and update this instance in-place."""
-        oi = _legacy.ObjectInfo.fetch(*args, **kwargs)
+    def _fetch_inplace(self, *args: Any, **kwargs: Any) -> "NodeInfo":
+        """Fetch node_info from server and update this instance in-place."""
+        oi = _legacy.NodeInfo.fetch(*args, **kwargs)
         self._oi = oi
         self._data = oi
         return self
@@ -589,7 +601,7 @@ class ObjectInfo(_MappingWrapper):
         return getattr(self._oi, name)
 
     def __repr__(self) -> str:
-        return f"<ObjectInfo(flowtree) count={len(self._oi)}>"
+        return f"<NodeInfo(flowtree) count={len(self._oi)}>"
 
 
 class Workflow:
@@ -606,7 +618,7 @@ class Workflow:
         return cls(*args, **kwargs)
 
 
-__all__ = ["Tree", "Flow", "ApiFlow", "ObjectInfo", "Workflow"]
+__all__ = ["Tree", "Flow", "ApiFlow", "NodeInfo", "Workflow"]
 
 
 # ---------------------------------------------------------------------------
@@ -769,14 +781,31 @@ class NodeRef:
             return self.unwrap()[key]
 
     def __dir__(self) -> List[str]:
-        base = set(super().__dir__())
+        base = {"attrs", "choices", "tooltip", "spec", "tree", "to_dict", "unwrap",
+                "type", "title", "kind", "addr", "group", "index", "path", "where", "dictpath", "meta"}
         try:
             base.update(self.attrs())
         except Exception:
             pass
         return sorted(base)
 
+    def _widget_dict(self) -> Dict[str, Any]:
+        """Return a {name: value} dict of widget values, empty if no node_info."""
+        try:
+            a = self.attrs()
+            d = self.unwrap()
+            raw_keys = set(d.keys()) if isinstance(d, dict) else set()
+            widget_names = [n for n in a if n not in raw_keys]
+            if not widget_names:
+                return {}
+            return {n: getattr(self._p, n, None) for n in widget_names}
+        except Exception:
+            return {}
+
     def __repr__(self) -> str:
+        w = self._widget_dict()
+        if w:
+            return repr({str(self.where): w})
         t = self.type
         title = self.title
         bits = [f"{self.kind}", f"id={self.addr!r}"]
@@ -786,6 +815,9 @@ class NodeRef:
             bits.append(f"title={title!r}")
         bits.append(f"where={self.where!r}")
         return "<NodeRef " + " ".join(bits) + ">"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 
 class NodeSet:

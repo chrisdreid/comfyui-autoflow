@@ -51,9 +51,9 @@ flowchart  LR
   - `api.ksampler[0]._meta` / `.meta`
 - Path-style access: `api["ksampler/seed"]`
 - Workspace nodes via `.nodes`: `flow.nodes.ksampler[0].type`
-- Schema-aware drilling for workspace widgets (requires `object_info`):
-  - `flow = Flow("workflow.json", object_info="object_info.json")`
-  - `flow.nodes.KSampler[0].seed`  # maps `widgets_values` list to names using object_info
+- Schema-aware drilling for workspace widgets (requires `node_info`):
+  - `flow = Flow("workflow.json", node_info="node_info.json")`
+  - `flow.nodes.KSampler[0].seed`  # maps `widgets_values` list to names using node_info
 - Explore available keys/widgets:
   - `flow.nodes.KSampler[0].attrs()`
   - `flow.nodes.KSampler.attrs()`  # group: uses first node
@@ -131,9 +131,9 @@ Examples:
 import re
 from autoflow import Flow
 
-flow = Flow("workflow.json", object_info="object_info.json")
+flow = Flow("workflow.json", node_info="node_info.json")
 
-# Find by type, then update a widget value (schema-aware when object_info is attached)
+# Find by type, then update a widget value (schema-aware when node_info is attached)
 ksamplers = flow.nodes.find(type="KSampler")
 if not ksamplers:
     raise RuntimeError("No KSampler nodes found in workflow.json")
@@ -158,4 +158,4 @@ same_seed = flow.find(seed=re.compile(r"^123$"), depth=8)
 
 ## Deprecated / experimental switches
 - `AUTOFLOW_MODEL_LAYER` (internal): switches between model implementations for local testing.
-  - more: [`object-info-and-env.md`](object-info-and-env.md)
+  - more: [`node-info-and-env.md`](node-info-and-env.md)

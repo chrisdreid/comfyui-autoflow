@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Flowtree-mode tests ensuring ObjectInfo wrapper preserves `.source`
+Flowtree-mode tests ensuring NodeInfo wrapper preserves `.source`
 when passed into Flow/ApiFlow constructors.
 """
 
@@ -34,7 +34,7 @@ def _env_with_repo_root(extra: dict) -> dict:
     return env
 
 
-class TestFlowtreeObjectInfoPassthrough(unittest.TestCase):
+class TestFlowtreeNodeInfoPassthrough(unittest.TestCase):
     def _run(self, code: str) -> list[str]:
         out = subprocess.check_output(
             [sys.executable, "-c", code],
@@ -48,15 +48,15 @@ class TestFlowtreeObjectInfoPassthrough(unittest.TestCase):
         code = r"""
 import os
 from pathlib import Path
-from autoflow import ApiFlow, ObjectInfo
+from autoflow import ApiFlow, NodeInfo
 
 td = Path(os.environ["AUTOFLOW_TESTDATA_DIR"])
 api_path = td / "default-subgraphx2-api.json"
-oi_path = td / "object_info.json"
+oi_path = td / "node_info.json"
 
-oi = ObjectInfo.load(oi_path)
-api = ApiFlow.load(api_path, object_info=oi)
-print(api.object_info.source)
+oi = NodeInfo.load(oi_path)
+api = ApiFlow.load(api_path, node_info=oi)
+print(api.node_info.source)
 """
         out = self._run(code)
         self.assertTrue(out[0].startswith("file:"), out[0])

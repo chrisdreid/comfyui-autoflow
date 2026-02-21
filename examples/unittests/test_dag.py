@@ -78,7 +78,7 @@ class TestFlowDag(unittest.TestCase):
         self.assertIn(("5", "3"), d.edges)
         self.assertEqual(d.deps("3"), ["4", "5"])
 
-    def test_flow_dag_filters_by_object_info(self):
+    def test_flow_dag_filters_by_node_info(self):
         flow = Flow(
             {
                 "nodes": [
@@ -92,13 +92,13 @@ class TestFlowDag(unittest.TestCase):
                 "last_node_id": 15,
                 "last_link_id": 1,
             },
-            object_info={"CheckpointLoaderSimple": {}, "KSampler": {}},
+            node_info={"CheckpointLoaderSimple": {}, "KSampler": {}},
         )
         d = flow.dag
         self.assertEqual(d.cls, "Flow")
         self.assertIn("4", d.nodes)
         self.assertIn("3", d.nodes)
-        self.assertNotIn("15", d.nodes)  # MarkdownNote excluded by object_info
+        self.assertNotIn("15", d.nodes)  # MarkdownNote excluded by node_info
         self.assertIn(("4", "3"), d.edges)
 
 

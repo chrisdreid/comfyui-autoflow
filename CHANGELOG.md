@@ -5,12 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-20
+
+### Added
+- `WidgetValue` transparent wrapper — widget attributes now carry `.choices()`, `.tooltip()`, and `.spec()` methods while still comparing/hashing as raw values (`node.seed == 200` works)
+- `AUTOFLOW_COMFYUI_SERVER_URL` env var auto-fallback — `Flow` auto-fetches `node_info` from this URL when no explicit source is set
+- `UserWarning` emitted when `Flow` is created without `node_info`, guiding users to set the env var or pass it explicitly
+- `NodeRef.__repr__` shows clean path-keyed widget dict: `{'nodes.KSampler[0]': {'seed': 200, 'steps': 20}}`
+- `NodeRef.__dir__` filtered to show only widgets + useful methods (hides raw JSON noise)
+
+### Changed
+- **Renamed `object_info` → `node_info` throughout** (breaking: class `ObjectInfo` → `NodeInfo`, env var `AUTOFLOW_OBJECT_INFO_SOURCE` → `AUTOFLOW_NODE_INFO_SOURCE`, CLI `--object-info-path` → `--node-info-path`, `--download-object-info-path` → `--download-node-info-path`, doc file `object-info-and-env.md` → `node-info-and-env.md`)
+- `FlowNodeProxy.__getattr__` wraps widget values in `WidgetValue` for schema introspection
+
+---
+
 ## [1.2.0] - 2026-02-18
 
 ### Added
 - `Workflow(...)` — unified entry point that loads workspace *or* API payload, auto-converts, and optionally submits
-- `ObjectInfo.fetch(...)` / `ObjectInfo.from_comfyui_modules()` — first-class object_info helpers with env-driven auto-resolution
-- `AUTOFLOW_OBJECT_INFO_SOURCE` env var (`fetch` / `modules` / `server` / `file`) for automatic object_info resolution
+- `NodeInfo.fetch(...)` / `NodeInfo.from_comfyui_modules()` — first-class node_info helpers with env-driven auto-resolution
+- `AUTOFLOW_NODE_INFO_SOURCE` env var (`fetch` / `modules` / `server` / `file`) for automatic node_info resolution
 - `.execute()` serverless rendering — run ComfyUI workflows in-process via `NODE_CLASS_MAPPINGS` (no HTTP server required)
 - `comfyui_available()` public helper for environment detection
 - `Dag` / `.dag()` graph helpers (stdlib-only toposort, `.to_mermaid()`, `.to_dot()`)
@@ -32,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Default model layer is now `flowtree` (navigation-first wrappers, promoted from experimental)
-- Conversion node inclusion now driven by `object_info` membership (no hardcoded UI-node skip list)
+- Conversion node inclusion now driven by `node_info` membership (no hardcoded UI-node skip list)
 - Unified output saving APIs around `output_path` with shared filename templating (`{src_frame}`, `###`, `%0Nd`)
 - `ErrorSeverity` / `ErrorCategory` use `str` mixin for JSON compatibility
 - `api.py` public API cleaned: private `_`-prefixed names replaced with public equivalents
@@ -46,18 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-02-14
 
 ### Added
-- Polymorphic `.load()` on `Flow`, `ApiFlow`, `ObjectInfo`, and `Workflow` — accepts `dict`, `bytes`, JSON string, file path, or ComfyUI PNG
+- Polymorphic `.load()` on `Flow`, `ApiFlow`, `NodeInfo`, and `Workflow` — accepts `dict`, `bytes`, JSON string, file path, or ComfyUI PNG
 - PNG metadata extraction (stdlib-only, no Pillow) — recover workflows from any ComfyUI-exported PNG
 - OOP node access with mutable `DictView` drilling proxies:
   - `api.ksampler[0].seed = 42` (case-insensitive, indexable, iterable)
   - `flow.nodes.ksampler[0].type` / `flow.extra.ds.scale`
   - `obj.KSampler.input.required.seed` / path syntax `obj["KSampler/input/required/seed"]`
-- Schema-aware dot access on Flow nodes via attached `object_info` (drill `widgets_values` by name)
+- Schema-aware dot access on Flow nodes via attached `node_info` (drill `widgets_values` by name)
 - `.find(...)` helpers with deep key/value filters, regex support, and `depth=` control
 - `.attrs()` introspection on node proxies (raw keys + schema-derived widget names)
 - `ListView` for attribute drilling into single-item list-of-dicts
 - `.path()` / `.address()` on proxy objects for node addressing
-- `api_mapping()` callback-first mapping with rich context (upstream links, `object_info` param types, typed overwrites)
+- `api_mapping()` callback-first mapping with rich context (upstream links, `node_info` param types, typed overwrites)
 - Subgraph-aware conversion (inline/flatten `definitions.subgraphs`, nested supported)
 - CLI: `--submit` with progress output and optional `--save-images` / `--filepattern`
 - Centralized env-driven defaults (args → env → default) for timeouts, polling, depth, client_id
@@ -65,13 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Bumped version to `1.1.0`
 - Standardized public API argument names: `server_url`, `output_path`, `include_bytes` (breaking, no backward compat)
-- CLI flags standardized: `--input-path`, `--output-path`, `--object-info-path` (short flags unchanged)
+- CLI flags standardized: `--input-path`, `--output-path`, `--node-info-path` (short flags unchanged)
 - Removed implicit localhost defaults for server operations (must pass `server_url=` or set env)
 - Removed legacy `FLO2API_*` env var fallback
 - Terminology change: "API prompt" → "API payload" throughout codebase and docs
 
 ### Removed
-- Top-level `submit`, `get_images`, `object_info` free-function exports (use object methods instead)
+- Top-level `submit`, `get_images`, `node_info` free-function exports (use object methods instead)
 - Legacy short/alias arguments (`obj=`, `server=`, `meta=`, `output=`)
 
 ---
@@ -83,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strict `Flow` (workspace `workflow.json`) and `ApiFlow` (API payload `workflow-api.json`) dict-subclass types
 - `Workflow` smart-wrapper factory: auto-detects format, converts workspace → `ApiFlow` by default
 - Workspace → API payload conversion with structured error reporting (`ConvertResult`, `ConversionError`)
-- Offline conversion with saved `object_info.json`
+- Offline conversion with saved `node_info.json`
 - Online conversion via ComfyUI server `/object_info`
 - `ApiFlow.submit()` to send API payloads and fetch output images
 - Stdlib WebSocket progress callbacks via `submit(wait=True, on_event=...)`
@@ -92,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `force_recompute()` for opt-in cache avoidance
 - Callback-first mapping with workflow-level `extra` passthrough and typed overwrites
 - CLI entrypoint (`python -m autoflow`)
-- Comprehensive documentation: `README.md`, `docs/advanced.md`, `docs/load-vs-convert.md`, `docs/submit-and-images.md`, `docs/object-info-and-env.md`, and more
+- Comprehensive documentation: `README.md`, `docs/advanced.md`, `docs/load-vs-convert.md`, `docs/submit-and-images.md`, `docs/node-info-and-env.md`, and more
 - MIT License
 
 ---

@@ -3,8 +3,8 @@
 Conversion core: ComfyUI workspace workflow.json -> API payload (ApiFlow format).
 
 This module is stdlib-only by default. It supports:
-- offline conversion with a saved object_info JSON file
-- optional online object_info fetch (explicit via server_url or env var)
+- offline conversion with a saved node_info JSON file
+- optional online node_info fetch (explicit via server_url or env var)
 - optional direct mode importing ComfyUI modules (when available)
 """
 
@@ -30,13 +30,13 @@ from .defaults import (
     DEFAULT_JSON_INDENT,
     DEFAULT_SUBGRAPH_MAX_DEPTH,
     DEFAULT_USE_API,
-    ENV_OBJECT_INFO_SOURCE,
+    ENV_NODE_INFO_SOURCE,
 )
-from .origin import ObjectInfoOrigin
+from .origin import NodeInfoOrigin
 
 logger = logging.getLogger(__name__)
 
-_OBJECT_INFO_SOURCE_CACHE: Dict[str, Dict[str, Any]] = {}
+_NODE_INFO_SOURCE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
 # Errors / structured results
@@ -394,7 +394,7 @@ def flatten_subgraphs(workflow_data: Dict[str, Any], *, max_depth: int = DEFAULT
 
 
 # ---------------------------------------------------------------------------
-# File/object_info I/O + network fetch
+# File/node_info I/O + network fetch
 # ---------------------------------------------------------------------------
 
 
@@ -427,44 +427,44 @@ def save_workflow_to_file(workflow_data: Dict[str, Any], file_path: Union[str, P
         raise WorkflowConverterError(f"Failed to save workflow to {file_path}: {str(e)}")
 
 
-def save_object_info_to_file(object_info: Dict[str, Any], file_path: Union[str, Path]) -> None:
+def save_node_info_to_file(node_info: Dict[str, Any], file_path: Union[str, Path]) -> None:
     try:
         output_path = Path(file_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(object_info, f, indent=2, ensure_ascii=False)
+            json.dump(node_info, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        raise WorkflowConverterError(f"Failed to save object_info to {file_path}: {str(e)}")
+        raise WorkflowConverterError(f"Failed to save node_info to {file_path}: {str(e)}")
 
 
-def load_object_info_from_file(file_path: Union[str, Path]) -> Dict[str, Any]:
+def load_node_info_from_file(file_path: Union[str, Path]) -> Dict[str, Any]:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = f.read()
             result = json.loads(data)
             if not isinstance(result, dict):
-                raise ValueError("Invalid object_info file: expected dictionary")
+                raise ValueError("Invalid node_info file: expected dictionary")
             return result
     except FileNotFoundError:
         raise WorkflowConverterError(f"Object info file not found: {file_path}")
     except json.JSONDecodeError as e:
-        raise WorkflowConverterError(f"Invalid JSON in object info file {file_path}: {str(e)}")
+        raise WorkflowConverterError(f"Invalid JSON in node info file {file_path}: {str(e)}")
     except UnicodeDecodeError as e:
-        raise WorkflowConverterError(f"Encoding error reading object info file {file_path}: {str(e)}")
+        raise WorkflowConverterError(f"Encoding error reading node info file {file_path}: {str(e)}")
     except Exception as e:
-        raise WorkflowConverterError(f"Unexpected error loading object info file {file_path}: {str(e)}")
+        raise WorkflowConverterError(f"Unexpected error loading node info file {file_path}: {str(e)}")
 
 
-def fetch_object_info(server_url: str, timeout: int = DEFAULT_HTTP_TIMEOUT_S) -> Dict[str, Any]:
+def fetch_node_info(server_url: str, timeout: int = DEFAULT_HTTP_TIMEOUT_S) -> Dict[str, Any]:
     url = f"{server_url.rstrip('/')}/object_info"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             if response.code != 200:
-                raise ValueError(f"Failed to fetch object_info: HTTP {response.code}")
+                raise ValueError(f"Failed to fetch node_info: HTTP {response.code}")
             data = response.read().decode("utf-8")
             result = json.loads(data)
             if not isinstance(result, dict):
-                raise ValueError("Invalid object_info response: expected dictionary")
+                raise ValueError("Invalid node_info response: expected dictionary")
             return result
     except urllib.error.URLError as e:
         raise ConnectionError(f"Could not connect to server {server_url}: {str(e)}")
@@ -487,15 +487,15 @@ def _is_http_url(value: Union[str, Path]) -> bool:
     return s.startswith("http://") or s.startswith("https://")
 
 
-def fetch_object_info_from_url(url: str, timeout: int = DEFAULT_HTTP_TIMEOUT_S) -> Dict[str, Any]:
+def fetch_node_info_from_url(url: str, timeout: int = DEFAULT_HTTP_TIMEOUT_S) -> Dict[str, Any]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             if response.code != 200:
-                raise ValueError(f"Failed to fetch object_info: HTTP {response.code}")
+                raise ValueError(f"Failed to fetch node_info: HTTP {response.code}")
             data = response.read().decode("utf-8")
             result = json.loads(data)
             if not isinstance(result, dict):
-                raise ValueError("Invalid object_info response: expected dictionary")
+                raise ValueError("Invalid node_info response: expected dictionary")
             return result
     except urllib.error.URLError as e:
         raise ConnectionError(f"Could not connect to URL {url}: {str(e)}")
@@ -520,7 +520,7 @@ def _detect_comfyui_root_from_imports() -> Optional[Path]:
     """
     Best-effort detection of the ComfyUI repo root for 'modules' mode.
 
-    This is used for provenance only (e.g. ObjectInfo.source = "modules:/path/to/ComfyUI").
+    This is used for provenance only (e.g. NodeInfo.source = "modules:/path/to/ComfyUI").
     """
     try:
         import nodes as nodes_mod  # type: ignore
@@ -618,7 +618,7 @@ def _as_jsonable(value: Any) -> Any:
     return value
 
 
-def object_info_from_comfyui_modules() -> Dict[str, Any]:
+def node_info_from_comfyui_modules() -> Dict[str, Any]:
     try:
         import comfy.samplers  # noqa: F401
         import comfy.sd  # noqa: F401
@@ -627,7 +627,7 @@ def object_info_from_comfyui_modules() -> Dict[str, Any]:
         raise NodeInfoError(
             "ComfyUI modules not found. Please run this script from the ComfyUI directory "
             "or use --server-url to fetch node information via API, "
-            "or use --object-info-path to load from a saved file."
+            "or use --node-info-path to load from a saved file."
         ) from e
 
     out: Dict[str, Any] = {}
@@ -684,16 +684,16 @@ def object_info_from_comfyui_modules() -> Dict[str, Any]:
     return out
 
 
-def resolve_object_info(
-    object_info: Optional[Union[Dict[str, Any], str, Path]],
+def resolve_node_info(
+    node_info: Optional[Union[Dict[str, Any], str, Path]],
     server_url: Optional[str],
     timeout: int,
     *,
     allow_env: bool = True,
     require_source: bool = False,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
-    oi, use_api, _origin = resolve_object_info_with_origin(
-        object_info,
+    oi, use_api, _origin = resolve_node_info_with_origin(
+        node_info,
         server_url,
         timeout,
         allow_env=allow_env,
@@ -702,49 +702,49 @@ def resolve_object_info(
     return oi, use_api
 
 
-def resolve_object_info_with_origin(
-    object_info: Optional[Union[Dict[str, Any], str, Path]],
+def resolve_node_info_with_origin(
+    node_info: Optional[Union[Dict[str, Any], str, Path]],
     server_url: Optional[str],
     timeout: int,
     *,
     allow_env: bool = True,
     require_source: bool = False,
-) -> Tuple[Optional[Dict[str, Any]], bool, ObjectInfoOrigin]:
+) -> Tuple[Optional[Dict[str, Any]], bool, NodeInfoOrigin]:
     """
-    Resolve object_info and also return origin metadata.
+    Resolve node_info and also return origin metadata.
 
-    This is the same resolution logic used by `resolve_object_info`, but it returns an
-    `ObjectInfoOrigin` describing where the object_info came from.
+    This is the same resolution logic used by `resolve_node_info`, but it returns an
+    `NodeInfoOrigin` describing where the node_info came from.
     """
-    if object_info is not None:
-        if isinstance(object_info, Mapping):
-            # Preserve origin if caller provided a richer object_info object.
-            origin = getattr(object_info, "origin", None) or getattr(object_info, "_autoflow_origin", None)
-            if isinstance(origin, ObjectInfoOrigin):
-                # Preserve dict subclasses (e.g. models.ObjectInfo) so callers can keep metadata.
-                if isinstance(object_info, dict):
-                    return object_info, True, origin
-                return dict(object_info), True, origin
-            if isinstance(object_info, dict):
-                return object_info, True, ObjectInfoOrigin(requested="dict", resolved="dict")
-            return dict(object_info), True, ObjectInfoOrigin(requested="dict", resolved="dict")
-        if isinstance(object_info, (str, Path)):
-            obj_s = str(object_info).strip()
+    if node_info is not None:
+        if isinstance(node_info, Mapping):
+            # Preserve origin if caller provided a richer node_info object.
+            origin = getattr(node_info, "origin", None) or getattr(node_info, "_autoflow_origin", None)
+            if isinstance(origin, NodeInfoOrigin):
+                # Preserve dict subclasses (e.g. models.NodeInfo) so callers can keep metadata.
+                if isinstance(node_info, dict):
+                    return node_info, True, origin
+                return dict(node_info), True, origin
+            if isinstance(node_info, dict):
+                return node_info, True, NodeInfoOrigin(requested="dict", resolved="dict")
+            return dict(node_info), True, NodeInfoOrigin(requested="dict", resolved="dict")
+        if isinstance(node_info, (str, Path)):
+            obj_s = str(node_info).strip()
             obj_str = obj_s.lower()
             if obj_str in ("modules", "from_comfyui_modules", "comfyui_modules"):
                 root = _detect_comfyui_root_from_imports()
                 return (
-                    object_info_from_comfyui_modules(),
+                    node_info_from_comfyui_modules(),
                     True,
-                    ObjectInfoOrigin(requested=obj_s, resolved="modules", modules_root=str(root) if root else None),
+                    NodeInfoOrigin(requested=obj_s, resolved="modules", modules_root=str(root) if root else None),
                 )
             if obj_str in ("fetch", "server"):
                 # If a file literally named "fetch"/"server" exists, prefer it.
-                # (This avoids surprising behavior for explicit object_info="fetch".)
+                # (This avoids surprising behavior for explicit node_info="fetch".)
                 try:
                     p = Path(obj_s)
                     if p.exists():
-                        return load_object_info_from_file(p), True, ObjectInfoOrigin(requested=obj_s, resolved="file")
+                        return load_node_info_from_file(p), True, NodeInfoOrigin(requested=obj_s, resolved="file")
                 except Exception:
                     pass
 
@@ -757,20 +757,20 @@ def resolve_object_info_with_origin(
                 if obj_str == "server":
                     if not effective:
                         raise WorkflowConverterError(
-                            "object_info='server' requires server_url or AUTOFLOW_COMFYUI_SERVER_URL."
+                            "node_info='server' requires server_url or AUTOFLOW_COMFYUI_SERVER_URL."
                         )
                     return (
-                        fetch_object_info(effective, timeout),
+                        fetch_node_info(effective, timeout),
                         True,
-                        ObjectInfoOrigin(requested=obj_s, resolved="server", effective_server_url=effective),
+                        NodeInfoOrigin(requested=obj_s, resolved="server", effective_server_url=effective),
                     )
 
                 # fetch: try server_url/env; otherwise fall back to modules
                 if effective:
                     return (
-                        fetch_object_info(effective, timeout),
+                        fetch_node_info(effective, timeout),
                         True,
-                        ObjectInfoOrigin(
+                        NodeInfoOrigin(
                             requested=obj_s,
                             resolved="server",
                             effective_server_url=effective,
@@ -778,97 +778,111 @@ def resolve_object_info_with_origin(
                         ),
                     )
                 return (
-                    object_info_from_comfyui_modules(),
+                    node_info_from_comfyui_modules(),
                     True,
-                    ObjectInfoOrigin(
+                    NodeInfoOrigin(
                         requested=obj_s,
                         resolved="modules",
                         modules_root=str(_detect_comfyui_root_from_imports() or "") or None,
                         note="fetch->modules",
                     ),
                 )
-            if _is_http_url(object_info):
-                url = str(object_info)
-                return fetch_object_info_from_url(url, timeout=timeout), True, ObjectInfoOrigin(requested=url, resolved="url")
-            p = str(object_info)
-            return load_object_info_from_file(object_info), True, ObjectInfoOrigin(requested=p, resolved="file")
-        raise WorkflowConverterError("object_info must be a dictionary, file path, or URL")
+            if _is_http_url(node_info):
+                url = str(node_info)
+                return fetch_node_info_from_url(url, timeout=timeout), True, NodeInfoOrigin(requested=url, resolved="url")
+            p = str(node_info)
+            return load_node_info_from_file(node_info), True, NodeInfoOrigin(requested=p, resolved="file")
+        raise WorkflowConverterError("node_info must be a dictionary, file path, or URL")
 
     if allow_env:
-        src = os.environ.get(ENV_OBJECT_INFO_SOURCE, "").strip()
+        src = os.environ.get(ENV_NODE_INFO_SOURCE, "").strip()
         if src:
             src_l = src.lower()
             if src_l == "fetch":
                 effective = server_url or os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL")
                 if effective:
-                    oi = fetch_object_info(effective, timeout)
-                    _OBJECT_INFO_SOURCE_CACHE["fetch"] = oi
-                    return oi, True, ObjectInfoOrigin(
+                    oi = fetch_node_info(effective, timeout)
+                    _NODE_INFO_SOURCE_CACHE["fetch"] = oi
+                    return oi, True, NodeInfoOrigin(
                         requested=src, resolved="server", via_env=True, effective_server_url=effective, note="env:fetch->server"
                     )
-                oi = object_info_from_comfyui_modules()
-                _OBJECT_INFO_SOURCE_CACHE["modules"] = oi
+                oi = node_info_from_comfyui_modules()
+                _NODE_INFO_SOURCE_CACHE["modules"] = oi
                 root = _detect_comfyui_root_from_imports()
-                return oi, True, ObjectInfoOrigin(
+                return oi, True, NodeInfoOrigin(
                     requested=src, resolved="modules", via_env=True, modules_root=str(root) if root else None, note="env:fetch->modules"
                 )
             if src_l == "modules":
-                cached = _OBJECT_INFO_SOURCE_CACHE.get("modules")
+                cached = _NODE_INFO_SOURCE_CACHE.get("modules")
                 if cached is not None:
                     root = _detect_comfyui_root_from_imports()
-                    return cached, True, ObjectInfoOrigin(
+                    return cached, True, NodeInfoOrigin(
                         requested=src, resolved="modules", via_env=True, modules_root=str(root) if root else None, note="env:modules(cached)"
                     )
-                oi = object_info_from_comfyui_modules()
-                _OBJECT_INFO_SOURCE_CACHE["modules"] = oi
+                oi = node_info_from_comfyui_modules()
+                _NODE_INFO_SOURCE_CACHE["modules"] = oi
                 root = _detect_comfyui_root_from_imports()
-                return oi, True, ObjectInfoOrigin(
+                return oi, True, NodeInfoOrigin(
                     requested=src, resolved="modules", via_env=True, modules_root=str(root) if root else None, note="env:modules"
                 )
             if src_l == "server":
                 effective = server_url or os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL")
                 if not effective:
                     raise WorkflowConverterError(
-                        "AUTOFLOW_OBJECT_INFO_SOURCE=server requires server_url or AUTOFLOW_COMFYUI_SERVER_URL."
+                        "AUTOFLOW_NODE_INFO_SOURCE=server requires server_url or AUTOFLOW_COMFYUI_SERVER_URL."
                     )
-                oi = fetch_object_info(effective, timeout)
-                _OBJECT_INFO_SOURCE_CACHE["server"] = oi
-                return oi, True, ObjectInfoOrigin(
+                oi = fetch_node_info(effective, timeout)
+                _NODE_INFO_SOURCE_CACHE["server"] = oi
+                return oi, True, NodeInfoOrigin(
                     requested=src, resolved="server", via_env=True, effective_server_url=effective, note="env:server"
                 )
             if _is_http_url(src):
-                return fetch_object_info_from_url(src, timeout=timeout), True, ObjectInfoOrigin(requested=src, resolved="url", via_env=True)
-            return load_object_info_from_file(src), True, ObjectInfoOrigin(requested=src, resolved="file", via_env=True)
+                return fetch_node_info_from_url(src, timeout=timeout), True, NodeInfoOrigin(requested=src, resolved="url", via_env=True)
+            return load_node_info_from_file(src), True, NodeInfoOrigin(requested=src, resolved="file", via_env=True)
 
     if server_url:
-        return fetch_object_info(server_url, timeout), True, ObjectInfoOrigin(
+        return fetch_node_info(server_url, timeout), True, NodeInfoOrigin(
             requested="server_url", resolved="server", effective_server_url=server_url, note="server_url fallback"
         )
 
+    # Final fallback: check AUTOFLOW_COMFYUI_SERVER_URL even without explicit source
+    if allow_env:
+        env_server = os.environ.get("AUTOFLOW_COMFYUI_SERVER_URL", "").strip()
+        if env_server:
+            try:
+                oi = fetch_node_info(env_server, timeout)
+                _NODE_INFO_SOURCE_CACHE["server"] = oi
+                return oi, True, NodeInfoOrigin(
+                    requested="auto", resolved="server", via_env=True,
+                    effective_server_url=env_server, note="auto:AUTOFLOW_COMFYUI_SERVER_URL fallback"
+                )
+            except Exception:
+                pass  # server unreachable, fall through
+
     if require_source:
         raise WorkflowConverterError(
-            "Missing object_info source. Set AUTOFLOW_OBJECT_INFO_SOURCE or pass object_info explicitly."
+            "Missing node_info source. Set AUTOFLOW_NODE_INFO_SOURCE or pass node_info explicitly."
         )
 
-    return None, False, ObjectInfoOrigin(note="empty")
+    return None, False, NodeInfoOrigin(note="empty")
 
 
-def normalize_object_info(
-    object_info: Optional[Union[Dict[str, Any], str, Path, Any]],
+def normalize_node_info(
+    node_info: Optional[Union[Dict[str, Any], str, Path, Any]],
     *,
     server_url: Optional[str] = None,
     timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     allow_env: bool = False,
     require_source: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    if object_info is None:
+    if node_info is None:
         if not allow_env and server_url is None:
             if require_source:
                 raise WorkflowConverterError(
-                    "Missing object_info source. Set AUTOFLOW_OBJECT_INFO_SOURCE or pass object_info explicitly."
+                    "Missing node_info source. Set AUTOFLOW_NODE_INFO_SOURCE or pass node_info explicitly."
                 )
             return None
-        oi, _use_api = resolve_object_info(
+        oi, _use_api = resolve_node_info(
             None,
             server_url,
             timeout,
@@ -876,8 +890,8 @@ def normalize_object_info(
             require_source=require_source,
         )
         return oi
-    oi, _use_api = resolve_object_info(
-        object_info,
+    oi, _use_api = resolve_node_info(
+        node_info,
         server_url,
         timeout,
         allow_env=allow_env,
@@ -891,13 +905,13 @@ def normalize_object_info(
 # ---------------------------------------------------------------------------
 
 
-def get_widget_input_names(class_type: str, object_info: Optional[Dict[str, Any]] = None, use_api: bool = False) -> List[str]:
+def get_widget_input_names(class_type: str, node_info: Optional[Dict[str, Any]] = None, use_api: bool = False) -> List[str]:
     if use_api:
-        if object_info is None:
-            raise NodeInfoError("object_info must be provided when using API mode")
-        node_info = object_info.get(class_type)
         if node_info is None:
-            raise NodeInfoError(f"Node class '{class_type}' not found in object_info")
+            raise NodeInfoError("node_info must be provided when using API mode")
+        node_info = node_info.get(class_type)
+        if node_info is None:
+            raise NodeInfoError(f"Node class '{class_type}' not found in node_info")
         inputs_def = node_info.get("input", {})
         if not isinstance(inputs_def, dict):
             raise NodeInfoError(f"Invalid input definition for node '{class_type}'")
@@ -930,7 +944,7 @@ def get_widget_input_names(class_type: str, object_info: Optional[Dict[str, Any]
         raise NodeInfoError(
             "ComfyUI modules not found. Please run this script from the ComfyUI directory "
             "or use --server-url to fetch node information via API, "
-            "or use --object-info-path to load from a saved file."
+            "or use --node-info-path to load from a saved file."
         ) from e
 
     if class_type not in NODE_CLASS_MAPPINGS:
@@ -964,10 +978,10 @@ def get_widget_input_names(class_type: str, object_info: Optional[Dict[str, Any]
     return widget_names
 
 
-def _widget_spec_for_name(class_type: str, name: str, object_info: Optional[Dict[str, Any]]) -> Any:
-    if not isinstance(object_info, dict):
+def _widget_spec_for_name(class_type: str, name: str, node_info: Optional[Dict[str, Any]]) -> Any:
+    if not isinstance(node_info, dict):
         return None
-    node_info = object_info.get(class_type)
+    node_info = node_info.get(class_type)
     if not isinstance(node_info, dict):
         return None
     inputs_def = node_info.get("input")
@@ -1030,7 +1044,7 @@ def align_widgets_values(
     widgets_values: List[Any],
     widget_names: List[str],
     *,
-    object_info: Optional[Dict[str, Any]] = None,
+    node_info: Optional[Dict[str, Any]] = None,
     size_guard: int = 2000,
 ) -> List[Any]:
     n = len(widget_names)
@@ -1041,7 +1055,7 @@ def align_widgets_values(
     specs = []
     defaults = []
     for name in widget_names:
-        spec = _widget_spec_for_name(class_type, name, object_info)
+        spec = _widget_spec_for_name(class_type, name, node_info)
         specs.append(spec)
         defaults.append(_spec_default(spec))
 
@@ -1151,7 +1165,7 @@ def resolve_bypassed_links(
 
 def workflow_to_api_format_with_errors(
     workflow_data: Dict[str, Any],
-    object_info: Optional[Dict[str, Any]] = None,
+    node_info: Optional[Dict[str, Any]] = None,
     use_api: bool = DEFAULT_USE_API,
     include_meta: bool = DEFAULT_INCLUDE_META,
 ) -> ConversionResult:
@@ -1225,15 +1239,15 @@ def workflow_to_api_format_with_errors(
         class_type = node.get("type", "unknown")
 
         try:
-            # Node inclusion is driven by object_info (schema), not hardcoded node names.
-            # If object_info is present, any node type not in object_info is skipped (UI-only, unknown, etc).
-            if isinstance(object_info, dict) and object_info and class_type not in object_info:
+            # Node inclusion is driven by node_info (schema), not hardcoded node names.
+            # If node_info is present, any node type not in node_info is skipped (UI-only, unknown, etc).
+            if isinstance(node_info, dict) and node_info and class_type not in node_info:
                 skipped_nodes += 1
                 warnings.append(
                     ConversionError(
                         category=ErrorCategory.NODE_PROCESSING,
                         severity=ErrorSeverity.WARNING,
-                        message=f"Skipping node type not found in object_info: {class_type}",
+                        message=f"Skipping node type not found in node_info: {class_type}",
                         node_id=node_id_str,
                         details={"class_type": class_type},
                     )
@@ -1242,10 +1256,10 @@ def workflow_to_api_format_with_errors(
 
             inputs: Dict[str, Any] = {}
 
-            widget_names = get_widget_input_names(str(class_type), object_info, use_api)
+            widget_names = get_widget_input_names(str(class_type), node_info, use_api)
             widgets_values = node.get("widgets_values", []) or []
             if use_api:
-                widgets_values = align_widgets_values(str(class_type), list(widgets_values), widget_names, object_info=object_info)
+                widgets_values = align_widgets_values(str(class_type), list(widgets_values), widget_names, node_info=node_info)
 
             for i in range(min(len(widget_names), len(widgets_values))):
                 inputs[widget_names[i]] = widgets_values[i]
@@ -1328,11 +1342,11 @@ def workflow_to_api_format_with_errors(
 
 def workflow_to_api_format(
     workflow_data: Dict[str, Any],
-    object_info: Optional[Dict[str, Any]] = None,
+    node_info: Optional[Dict[str, Any]] = None,
     use_api: bool = DEFAULT_USE_API,
     include_meta: bool = DEFAULT_INCLUDE_META,
 ) -> Dict[str, Any]:
-    r = workflow_to_api_format_with_errors(workflow_data, object_info=object_info, use_api=use_api, include_meta=include_meta)
+    r = workflow_to_api_format_with_errors(workflow_data, node_info=node_info, use_api=use_api, include_meta=include_meta)
     if not r.success and r.errors:
         raise WorkflowConverterError(r.errors[0].message)
     return r.data if isinstance(r.data, dict) else {}
@@ -1555,18 +1569,18 @@ def _apply_autoflow_node_patches(
             _apply_patch_ops(api_data[nid], data, default_mode=mode)  # type: ignore[arg-type]
 
 
-def _wrap_apiflow(api_data: Dict[str, Any], *, object_info: Optional[Dict[str, Any]], use_api: bool, workflow_meta: Any):
+def _wrap_apiflow(api_data: Dict[str, Any], *, node_info: Optional[Dict[str, Any]], use_api: bool, workflow_meta: Any):
     # Avoid import cycles during refactor: prefer models, fall back to api.
     try:
         from .models import ApiFlow  # type: ignore
     except Exception:
         from .api import ApiFlow  # type: ignore
-    return ApiFlow(api_data, object_info=object_info, use_api=use_api, workflow_meta=workflow_meta)
+    return ApiFlow(api_data, node_info=node_info, use_api=use_api, workflow_meta=workflow_meta)
 
 
 def convert_workflow_with_errors(
     workflow_data: Union[Dict[str, Any], str, Path],
-    object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+    node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
     server_url: Optional[str] = None,
     timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1580,18 +1594,18 @@ def convert_workflow_with_errors(
 
         effective_server_url = normalize_server_url(
             server_url,
-            allow_env=object_info is None,
+            allow_env=node_info is None,
             allow_none=True,
         )
 
-        object_info_dict, use_api = resolve_object_info(
-            object_info,
+        node_info_dict, use_api = resolve_node_info(
+            node_info,
             effective_server_url,
             timeout,
             allow_env=True,
             require_source=True,
         )
-        api_data = workflow_to_api_format_with_errors(workflow_dict, object_info_dict, use_api, include_meta)
+        api_data = workflow_to_api_format_with_errors(workflow_dict, node_info_dict, use_api, include_meta)
 
         enable_meta = True if apply_autoflow_meta is None else bool(apply_autoflow_meta)
         if disable_autoflow_meta:
@@ -1671,7 +1685,7 @@ def convert_workflow_with_errors(
 
 def convert_workflow(
     workflow_data: Union[Dict[str, Any], str, Path],
-    object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+    node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
     server_url: Optional[str] = None,
     timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1684,18 +1698,18 @@ def convert_workflow(
 
     effective_server_url = normalize_server_url(
         server_url,
-        allow_env=object_info is None,
+        allow_env=node_info is None,
         allow_none=True,
     )
 
-    object_info_dict, use_api = resolve_object_info(
-        object_info,
+    node_info_dict, use_api = resolve_node_info(
+        node_info,
         effective_server_url,
         timeout,
         allow_env=True,
         require_source=True,
     )
-    api_data = workflow_to_api_format(workflow_dict, object_info_dict, use_api, include_meta)
+    api_data = workflow_to_api_format(workflow_dict, node_info_dict, use_api, include_meta)
     workflow_meta = _apply_convert_mapping(workflow_dict, api_data)
 
     enable_meta = True if apply_autoflow_meta is None else bool(apply_autoflow_meta)
@@ -1708,13 +1722,13 @@ def convert_workflow(
     if output_file is not None:
         save_workflow_to_file(api_data, output_file)
 
-    wf = _wrap_apiflow(api_data, object_info=object_info_dict, use_api=use_api, workflow_meta=workflow_meta)
+    wf = _wrap_apiflow(api_data, node_info=node_info_dict, use_api=use_api, workflow_meta=workflow_meta)
     if convert_callbacks is not None:
         try:
             from .map import api_mapping
             wf = _wrap_apiflow(
                 api_mapping(wf, convert_callbacks, in_place=False),
-                object_info=wf.object_info,
+                node_info=wf.node_info,
                 use_api=wf.use_api,
                 workflow_meta=wf.workflow_meta,
             )
@@ -1725,7 +1739,7 @@ def convert_workflow(
 
 def convert(
     workflow_data: Union[Dict[str, Any], str, Path],
-    object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+    node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
     server_url: Optional[str] = None,
     timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1736,7 +1750,7 @@ def convert(
 ):
     wf = convert_workflow(
         workflow_data=workflow_data,
-        object_info=object_info,
+        node_info=node_info,
         server_url=server_url,
         timeout=timeout,
         include_meta=include_meta,
@@ -1752,7 +1766,7 @@ def convert(
 
 def convert_with_errors(
     workflow_data: Union[Dict[str, Any], str, Path],
-    object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+    node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
     server_url: Optional[str] = None,
     timeout: int = DEFAULT_HTTP_TIMEOUT_S,
     include_meta: bool = DEFAULT_INCLUDE_META,
@@ -1763,7 +1777,7 @@ def convert_with_errors(
 )-> ConvertResult:
     r = convert_workflow_with_errors(
         workflow_data=workflow_data,
-        object_info=object_info,
+        node_info=node_info,
         server_url=server_url,
         timeout=timeout,
         include_meta=include_meta,
@@ -1775,7 +1789,7 @@ def convert_with_errors(
     data = None
     if isinstance(r.data, dict):
         try:
-            data = _wrap_apiflow(r.data, object_info=None, use_api=True, workflow_meta=None)
+            data = _wrap_apiflow(r.data, node_info=None, use_api=True, workflow_meta=None)
         except Exception:
             data = r.data
     out = ConvertResult(

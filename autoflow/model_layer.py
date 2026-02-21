@@ -30,17 +30,17 @@ def model_layer_name() -> str:
 def get_models():
     name = model_layer_name()
     if name == "flowtree":
-        from .flowtree import ApiFlow, Flow, ObjectInfo, Workflow  # noqa: F401
+        from .flowtree import ApiFlow, Flow, NodeInfo, Workflow  # noqa: F401
 
-        return Flow, ApiFlow, ObjectInfo, Workflow
+        return Flow, ApiFlow, NodeInfo, Workflow
 
-    from .models import ApiFlow, Flow, ObjectInfo, Workflow  # noqa: F401
+    from .models import ApiFlow, Flow, NodeInfo, Workflow  # noqa: F401
 
-    return Flow, ApiFlow, ObjectInfo, Workflow
+    return Flow, ApiFlow, NodeInfo, Workflow
 
 
-Flow, ApiFlow, ObjectInfo, Workflow = get_models()
+Flow, ApiFlow, NodeInfo, Workflow = get_models()
 
-__all__ = ["model_layer_name", "get_models", "Flow", "ApiFlow", "ObjectInfo", "Workflow"]
+__all__ = ["model_layer_name", "get_models", "Flow", "ApiFlow", "NodeInfo", "Workflow"]
 
 

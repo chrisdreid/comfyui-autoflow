@@ -19,7 +19,7 @@ flowchart LR
 from autoflow import Workflow
 from autoflow.map import force_recompute
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api2 = force_recompute(api, use_defaults=True)
 ```
 

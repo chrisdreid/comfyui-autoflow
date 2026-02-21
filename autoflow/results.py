@@ -54,20 +54,20 @@ except Exception:
 def _sanitize_api_prompt(
     api_prompt: Dict[str, Any],
     *,
-    object_info: Optional[Dict[str, Any]] = None,
+    node_info: Optional[Dict[str, Any]] = None,
     drop_unknown: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Sanitize an API-format prompt before submitting to ComfyUI.
 
-    - If object_info is provided (recommended), drops any nodes whose class_type is
-      not present in object_info (because ComfyUI cannot execute unknown node types).
+    - If node_info is provided (recommended), drops any nodes whose class_type is
+      not present in node_info (because ComfyUI cannot execute unknown node types).
 
-    This is intentionally conservative: in absence of object_info, we do NOT attempt to
+    This is intentionally conservative: in absence of node_info, we do NOT attempt to
     infer unknown nodes.
     """
     if drop_unknown is None:
-        drop_unknown = bool(isinstance(object_info, dict) and object_info)
+        drop_unknown = bool(isinstance(node_info, dict) and node_info)
 
     out: Dict[str, Any] = {}
     for nid, node in api_prompt.items():
@@ -75,7 +75,7 @@ def _sanitize_api_prompt(
         if isinstance(node, dict):
             ct = node.get("class_type")
             if drop_unknown and isinstance(ct, str):
-                if not (isinstance(object_info, dict) and ct in object_info):
+                if not (isinstance(node_info, dict) and ct in node_info):
                     continue
         out[nid_s] = node
     return out
@@ -106,8 +106,8 @@ def _submit_impl(
     """
     base = _net.resolve_comfy_server_url(server_url)
 
-    object_info = getattr(prompt, "object_info", None) if hasattr(prompt, "object_info") else None
-    prompt_dict = _sanitize_api_prompt(dict(prompt), object_info=object_info)
+    node_info = getattr(prompt, "node_info", None) if hasattr(prompt, "node_info") else None
+    prompt_dict = _sanitize_api_prompt(dict(prompt), node_info=node_info)
     payload: Dict[str, Any] = {"prompt": prompt_dict, "client_id": client_id}
     if extra:
         payload.update(extra)

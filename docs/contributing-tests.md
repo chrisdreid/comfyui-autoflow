@@ -14,7 +14,7 @@ flowchart TD
 
   docs -->|"--mode online --allow-network"| docsOnline[RunOnline]
   docsOnline --> comfyServer[ComfyUIServer]
-  comfyServer -->|"object_info/submit"| docsRun
+  comfyServer -->|"node_info/submit"| docsRun
 ```
 
 

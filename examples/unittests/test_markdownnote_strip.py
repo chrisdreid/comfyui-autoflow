@@ -18,13 +18,13 @@ from examples.unittests._fixtures import fixture_path
 
 
 class TestMarkdownNoteStripping(unittest.TestCase):
-    def test_submit_sanitizer_drops_unknown_nodes_when_object_info_present(self):
+    def test_submit_sanitizer_drops_unknown_nodes_when_node_info_present(self):
         prompt = {
             "1": {"class_type": "TotallyFakeNode", "inputs": {}},
             "2": {"class_type": "KSampler", "inputs": {}},
         }
-        object_info = {"KSampler": {"input": {}}}
-        out = _sanitize_api_prompt(prompt, object_info=object_info)
+        node_info = {"KSampler": {"input": {}}}
+        out = _sanitize_api_prompt(prompt, node_info=node_info)
         self.assertIn("2", out)
         self.assertNotIn("1", out)
 
@@ -32,7 +32,7 @@ class TestMarkdownNoteStripping(unittest.TestCase):
         # FLOW.json contains MarkdownNote workspace nodes; conversion should not emit them in API payload.
         wf = convert_workflow(
             fixture_path("FLOW.json"),
-            object_info=fixture_path("object_info.json"),
+            node_info=fixture_path("node_info.json"),
             server_url=None,
         )
         class_types = [n.get("class_type") for n in wf.values() if isinstance(n, dict)]

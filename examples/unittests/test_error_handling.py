@@ -31,7 +31,7 @@ def test_validation_errors():
     for i, workflow in enumerate(invalid_workflows):
         print(f"\nTest {i+1}: {list(workflow.keys())}")
         # Use structured conversion directly (does not require Flow.load strict workspace shape).
-        result = convert_with_errors(workflow, object_info={})
+        result = convert_with_errors(workflow, node_info={})
         print(f"Success: {result.success}")
         for error in result.errors:
             print(f"  Error: {error.category.value}/{error.severity.value} - {error.message}")
@@ -62,10 +62,10 @@ def test_node_processing_errors():
         "links": [],
     }
 
-    # Test with empty object_info (should cause warnings)
-    object_info = {}
+    # Test with empty node_info (should cause warnings)
+    node_info = {}
 
-    result = convert_with_errors(workflow, object_info=object_info)
+    result = convert_with_errors(workflow, node_info=node_info)
     print(f"Success: {result.success}")
     print(f"Processed: {result.processed_nodes}/{result.total_nodes} nodes")
     print(f"Skipped: {result.skipped_nodes} nodes")
@@ -108,8 +108,8 @@ def test_partial_success():
         "links": [],
     }
 
-    # Provide minimal object_info
-    object_info = {
+    # Provide minimal node_info
+    node_info = {
         "ValidNode": {
             "input": {
                 "required": {},
@@ -118,7 +118,7 @@ def test_partial_success():
         }
     }
 
-    result = convert_with_errors(workflow, object_info=object_info)
+    result = convert_with_errors(workflow, node_info=node_info)
     print(f"Success: {result.success}")
     print(f"Processed: {result.processed_nodes}/{result.total_nodes} nodes")
     print(f"Has data: {result.data is not None}")
@@ -157,7 +157,7 @@ def test_successful_conversion():
 
         if (examples_dir / "small.json").exists():
             result = Flow.load(str(examples_dir / "small.json")).convert_with_errors(
-                object_info=str(examples_dir / "small_object-info.json")
+                node_info=str(examples_dir / "small_object-info.json")
             )
 
             print(f"Success: {result.success}")

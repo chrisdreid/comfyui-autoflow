@@ -41,9 +41,9 @@ class ConversionErrorResponse(BaseModel):
 class WorkflowRequest(BaseModel):
     """Request model for workflow conversion."""
     workflow_data: Dict[str, Any] = Field(..., description="ComfyUI workflow data")
-    object_info: Optional[Union[Dict[str, Any], str]] = Field(
+    node_info: Optional[Union[Dict[str, Any], str]] = Field(
         None,
-        description="Node object info (optional). Can be a JSON object, a file path, or an http(s) URL.",
+        description="Node info (optional). Can be a JSON object, a file path, or an http(s) URL.",
     )
     server_url: Optional[str] = Field(None, description="ComfyUI server URL (optional)")
     include_meta: bool = Field(False, description="Include _meta fields in output")
@@ -113,7 +113,7 @@ async def convert_workflow_endpoint(request: WorkflowRequest):
     try:
         # Convert workflow with structured error handling
         result = Flow.load(request.workflow_data).convert_with_errors(
-            object_info=request.object_info,
+            node_info=request.node_info,
             server_url=request.server_url,
             timeout=request.timeout,
             include_meta=request.include_meta,
@@ -156,7 +156,7 @@ async def convert_workflow_endpoint(request: WorkflowRequest):
 @app.post("/convert-workflow-file")
 async def convert_workflow_file_endpoint(
     workflow_file: str,
-    object_info_file: Optional[str] = None,
+    node_info_file: Optional[str] = None,
     server_url: Optional[str] = None,
     include_meta: bool = False,
     timeout: int = 30
@@ -169,7 +169,7 @@ async def convert_workflow_file_endpoint(
     """
     try:
         result = Flow.load(workflow_file).convert_with_errors(
-            object_info=object_info_file,
+            node_info=node_info_file,
             server_url=server_url,
             timeout=timeout,
             include_meta=include_meta,

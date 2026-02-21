@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from .defaults import DEFAULT_OUTPUT_PATH
-from .model_layer import Flow, Workflow, ObjectInfo
+from .model_layer import Flow, Workflow, NodeInfo
 
 __all__ = ["main"]
 
@@ -24,10 +24,10 @@ def main(argv=None) -> int:
 
     p.add_argument("--input-path", "-i", default=None, help="Input workflow.json (workspace) or a PNG with embedded workflow metadata")
     p.add_argument("--output-path", "-o", default=None, help="Output path for workflow-api.json")
-    p.add_argument("--object-info-path", "-f", default=None, help="object_info.json path for offline conversion")
+    p.add_argument("--node-info-path", "-f", default=None, help="node_info.json path for offline conversion")
 
     p.add_argument("--server-url", default=None, help="ComfyUI server URL (e.g. http://localhost:8188)")
-    p.add_argument("--download-object-info-path", default=None, help="Fetch /object_info and save to this path, then exit")
+    p.add_argument("--download-node-info-path", default=None, help="Fetch /object_info and save to this path, then exit")
 
     p.add_argument("--submit", action="store_true", help="Submit converted API payload to ComfyUI")
     p.add_argument("--no-wait", action="store_true", help="Submit without waiting for completion")
@@ -41,28 +41,28 @@ def main(argv=None) -> int:
 
     args = p.parse_args(argv)
 
-    # Download object_info and exit.
-    if args.download_object_info_path:
-        oi = ObjectInfo.fetch(server_url=args.server_url, output_path=args.download_object_info_path)
+    # Download node_info and exit.
+    if args.download_node_info_path:
+        oi = NodeInfo.fetch(server_url=args.server_url, output_path=args.download_node_info_path)
         # Print the path for scripting.
-        print(str(Path(args.download_object_info_path)))
+        print(str(Path(args.download_node_info_path)))
         return 0
 
     if not args.input_path:
-        p.error("--input-path is required (unless --download-object-info-path is used)")
+        p.error("--input-path is required (unless --download-node-info-path is used)")
 
-    object_info = args.object_info_path
+    node_info = args.node_info_path
 
     # Convert-only mode.
     if not args.submit:
         out_path = args.output_path or DEFAULT_OUTPUT_PATH
-        api = Workflow(args.input_path, object_info=object_info, auto_convert=True, server_url=args.server_url)
+        api = Workflow(args.input_path, node_info=node_info, auto_convert=True, server_url=args.server_url)
         api.save(out_path)
         print(str(Path(out_path)))
         return 0
 
     # Submit mode (convert then submit).
-    api = Workflow(args.input_path, object_info=object_info, auto_convert=True, server_url=args.server_url)
+    api = Workflow(args.input_path, node_info=node_info, auto_convert=True, server_url=args.server_url)
 
     wait = not bool(args.no_wait)
     on_event = None

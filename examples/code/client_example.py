@@ -47,7 +47,7 @@ class WorkflowConverterClient:
     def convert_workflow(
         self,
         workflow_data: Union[Dict[str, Any], str, Path],
-        object_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
         server_url: Optional[str] = None,
         include_meta: bool = False,
         timeout: int = 30
@@ -64,8 +64,8 @@ class WorkflowConverterClient:
             "timeout": timeout
         }
         
-        if object_info is not None:
-            payload["object_info"] = self._load_json_if_file(object_info)
+        if node_info is not None:
+            payload["node_info"] = self._load_json_if_file(node_info)
         
         if server_url is not None:
             payload["server_url"] = server_url
@@ -165,8 +165,8 @@ def example_successful_conversion(client: WorkflowConverterClient):
         "links": []
     }
     
-    # Provide object info
-    object_info = {
+    # Provide node info
+    node_info = {
         "TestNode": {
             "input": {
                 "required": {
@@ -177,7 +177,7 @@ def example_successful_conversion(client: WorkflowConverterClient):
         }
     }
     
-    result = client.convert_workflow(workflow, object_info=object_info)
+    result = client.convert_workflow(workflow, node_info=node_info)
     print_conversion_result(result)
 
 def example_validation_error(client: WorkflowConverterClient):
@@ -215,7 +215,7 @@ def example_partial_success(client: WorkflowConverterClient):
         "links": []
     }
     
-    object_info = {
+    node_info = {
         "ValidNode": {
             "input": {
                 "required": {
@@ -226,7 +226,7 @@ def example_partial_success(client: WorkflowConverterClient):
         }
     }
     
-    result = client.convert_workflow(workflow, object_info=object_info)
+    result = client.convert_workflow(workflow, node_info=node_info)
     print_conversion_result(result)
 
 def example_network_error(client: WorkflowConverterClient):

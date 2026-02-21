@@ -5,7 +5,7 @@ autoflow takes a ComfyUI **workspace** `workflow.json` and converts it into a Co
 ```mermaid
 flowchart LR
   workflowJson["workflow.json (workspace)"] --> flowObj["Flow / Workflow"]
-  objectInfo["object_info.json (optional)"] --> flowObj
+  objectInfo["node_info.json (optional)"] --> flowObj
   flowObj --> apiFlow["ApiFlow (API payload)"]
   apiFlow --> saveApi["save(workflow-api.json)"]
 ```
@@ -48,7 +48,7 @@ In an `ApiFlow`, subgraphs are already flattened. You can edit by node type, by 
 from autoflow import Workflow, ApiFlow
 
 # Convert workspace → API payload
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 
 # Find and edit nodes by class_type
 api.find(class_type="KSampler")[0].seed = 123
@@ -100,20 +100,20 @@ Related:
 # api
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="modules")
+api = Workflow("workflow.json", node_info="modules")
 api.save("workflow-api.json")
 ```
 
-You can also set `AUTOFLOW_OBJECT_INFO_SOURCE=modules` to auto-resolve `object_info` when omitted.
+You can also set `AUTOFLOW_NODE_INFO_SOURCE=modules` to auto-resolve `node_info` when omitted.
 
-## Offline conversion (saved `object_info.json`)
+## Offline conversion (saved `node_info.json`)
 
-Convert `workflow.json` using a saved `object_info.json` (reproducible; no server needed).
+Convert `workflow.json` using a saved `node_info.json` (reproducible; no server needed).
 
 ```mermaid
 flowchart LR
   workflowJson["workflow.json"] --> workflowObj["Workflow(...)"]
-  objectInfo["object_info.json"] --> workflowObj
+  objectInfo["node_info.json"] --> workflowObj
   workflowObj --> apiFlow["ApiFlow"]
 ```
 
@@ -121,13 +121,13 @@ flowchart LR
 # api
 from autoflow import Workflow
 
-api = Workflow("workflow.json", object_info="object_info.json")
+api = Workflow("workflow.json", node_info="node_info.json")
 api.save("workflow-api.json")
 ```
 
 ```bash
 # cli
-python -m autoflow --input-path workflow.json --output-path workflow-api.json --object-info-path object_info.json
+python -m autoflow --input-path workflow.json --output-path workflow-api.json --node-info-path node_info.json
 ```
 
 ## Strict loading (when you want control)
@@ -146,7 +146,7 @@ from autoflow import Flow
 
 flow = Flow.load("workflow.json")      # strict workspace loader
 # ... edit flow dict ...
-api = flow.convert(object_info="object_info.json")
+api = flow.convert(node_info="node_info.json")
 ```
 
 ```bash
