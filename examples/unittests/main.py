@@ -25,17 +25,22 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import datetime
 import html as html_mod
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import time
 import traceback
 import unittest
 import webbrowser
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -162,11 +167,68 @@ BUILTIN_NODE_INFO: Dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
+# Fixture discovery
+# ---------------------------------------------------------------------------
+@dataclass
+class FixtureCase:
+    """One test fixture discovered from a fixtures/ subdirectory."""
+    name: str
+    directory: Path
+    manifest: Dict[str, Any]
+    progress_log: List[Dict[str, Any]] = field(default_factory=list)
+    generated_images: List[Path] = field(default_factory=list)
+    ground_truth_images: List[Path] = field(default_factory=list)
+
+
+def discover_fixtures(fixtures_dir: str) -> List[FixtureCase]:
+    """Scan for subdirectories containing fixture.json."""
+    cases: List[FixtureCase] = []
+    fdir = Path(fixtures_dir)
+    if not fdir.is_dir():
+        return cases
+    for child in sorted(fdir.iterdir()):
+        manifest_path = child / "fixture.json"
+        if child.is_dir() and manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            gt_dir = child / data.get("expected", {}).get("ground_truth_dir", "ground-truth")
+            gt_images = sorted(gt_dir.glob("*.png")) if gt_dir.is_dir() else []
+            cases.append(FixtureCase(
+                name=data.get("name", child.name),
+                directory=child,
+                manifest=data,
+                ground_truth_images=gt_images,
+            ))
+    return cases
+
+
+def clean_output_dir(output_dir: Path) -> None:
+    """Wipe output directory contents (except .gitignore)."""
+    if output_dir.exists():
+        for child in output_dir.iterdir():
+            if child.name == ".gitignore":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def copy_ground_truth(fixture: FixtureCase, output_dir: Path) -> None:
+    """Copy ground-truth images into the output directory for comparison."""
+    gt_out = output_dir / fixture.directory.name / "ground-truth"
+    gt_out.mkdir(parents=True, exist_ok=True)
+    for img in fixture.ground_truth_images:
+        shutil.copy2(img, gt_out / img.name)
+
+
+# ---------------------------------------------------------------------------
 # Result collector
 # ---------------------------------------------------------------------------
 class TestResult:
-    """Stores one test outcome."""
-    __slots__ = ("stage", "test_id", "name", "status", "message", "duration_s")
+    """Stores one test outcome with optional rich context."""
+    __slots__ = ("stage", "test_id", "name", "status", "message", "duration_s", "detail")
 
     def __init__(self, stage: str, test_id: str, name: str):
         self.stage = stage
@@ -175,6 +237,7 @@ class TestResult:
         self.status: str = "PENDING"  # PASS, FAIL, SKIP, ERROR
         self.message: str = ""
         self.duration_s: float = 0.0
+        self.detail: Dict[str, Any] = {}  # desc, inputs, outputs, code, etc.
 
 
 class ResultCollector:
@@ -222,9 +285,12 @@ class ResultCollector:
 # Helper to run a test callable and catch everything
 # ---------------------------------------------------------------------------
 def _run_test(collector: ResultCollector, stage: str, test_id: str, name: str,
-              fn: Callable[[], None]) -> TestResult:
+              fn: Callable[[], None], *,
+              detail: Optional[Dict[str, Any]] = None) -> TestResult:
     import time
     r = collector.begin(stage, test_id, name)
+    if detail:
+        r.detail = detail
     t0 = time.monotonic()
     try:
         fn()
@@ -235,6 +301,104 @@ def _run_test(collector: ResultCollector, stage: str, test_id: str, name: str,
         collector.error(r, traceback.format_exc())
     r.duration_s = time.monotonic() - t0
     return r
+
+
+# ---------------------------------------------------------------------------
+# Test catalog — rich descriptions for the HTML report
+# Maps test_id → {desc, inputs, outputs, code}
+# ---------------------------------------------------------------------------
+TEST_CATALOG: Dict[str, Dict[str, str]] = {
+    # Stage 0: Bootstrap
+    "0.1": {"desc": "Verify autoflow package can be imported", "inputs": "Python module path", "outputs": "Module object"},
+    "0.2": {"desc": "Version string follows semver (major.minor[.patch])", "inputs": "autoflow.__version__", "outputs": "Validated version string"},
+    "0.3": {"desc": "All public API symbols exist in autoflow namespace", "inputs": "Expected symbol list (Flow, ApiFlow, Workflow, etc.)", "outputs": "All symbols found or list of missing",
+            "code": "from autoflow import Flow, Workflow, NodeInfo, convert, map_strings"},
+    "0.4": {"desc": "Bundled workflow.json can be loaded as a Flow object", "inputs": "examples/workflows/workflow.json", "outputs": "Flow object with nodes"},
+    "0.5": {"desc": "Built-in node_info dict contains the 6 standard ComfyUI node classes", "inputs": "BUILTIN_NODE_INFO dict (KSampler, CLIPTextEncode, etc.)", "outputs": "NodeInfo object"},
+
+    # Stage 1: Load + Access
+    "1.1": {"desc": "Load workflow from a filesystem path string", "inputs": "Path string → workflow.json", "outputs": "Flow object",
+            "code": "f = Flow.load('/path/to/workflow.json')"},
+    "1.2": {"desc": "Load workflow from a pathlib.Path object", "inputs": "Path object", "outputs": "Flow object",
+            "code": "f = Flow.load(Path('workflow.json'))"},
+    "1.3": {"desc": "Load workflow from an in-memory dict", "inputs": "Python dict (parsed JSON)", "outputs": "Flow object",
+            "code": "f = Flow.load({'nodes': [...], 'links': [...]})"},
+    "1.4": {"desc": "Load workflow from a raw JSON string", "inputs": "JSON string", "outputs": "Flow object"},
+    "1.5": {"desc": "Load workflow from bytes (UTF-8 encoded JSON)", "inputs": "bytes object", "outputs": "Flow object"},
+    "1.6": {"desc": "Enumerate all nodes in the workflow graph", "inputs": "Flow object", "outputs": "NodeSet collection"},
+    "1.7": {"desc": "Access a node by its class_type using Python dot notation", "inputs": "flow.nodes.KSampler", "outputs": "Node or NodeSet",
+            "code": "ks = flow.nodes.KSampler"},
+    "1.8": {"desc": "Access multiple instances of the same node type via indexing", "inputs": "flow.nodes.CLIPTextEncode[0]", "outputs": "Individual node instances",
+            "code": "clip_pos = flow.nodes.CLIPTextEncode[0]\nclip_neg = flow.nodes.CLIPTextEncode[1]"},
+    "1.9": {"desc": "Read widget values on a converted API node using dot notation", "inputs": "api.KSampler.seed", "outputs": "Widget value (int/float/str)",
+            "code": "api = Workflow('wf.json', node_info=ni)\nseed = api.KSampler.seed"},
+    "1.10": {"desc": "List all widget attribute names for a node", "inputs": "node.attrs()", "outputs": "List of widget names ['seed', 'steps', ...]",
+             "code": "attrs = api.KSampler.attrs()  # ['seed', 'steps', 'cfg', ...]"},
+    "1.11": {"desc": "Set a widget value via dot notation and verify it persists", "inputs": "api.KSampler.seed = 42", "outputs": "Updated seed value = 42",
+             "code": "api.KSampler.seed = 42\nassert api.KSampler.seed == 42"},
+    "1.16": {"desc": "Serialize Flow back to JSON string", "inputs": "Flow object", "outputs": "Valid JSON string",
+             "code": "j = flow.to_json()"},
+    "1.17": {"desc": "Load → serialize → reload → serialize produces identical JSON", "inputs": "Flow object", "outputs": "Two identical JSON dicts"},
+    "1.18": {"desc": "Save to file, reload, and verify content matches", "inputs": "flow.save(path)", "outputs": "Reloaded Flow matches original"},
+    "1.19": {"desc": "Build the internal DAG (directed acyclic graph) of node connections", "inputs": "Flow object", "outputs": "DAG structure"},
+    "1.20": {"desc": "Tab completion support: dir(flow.nodes) lists node class_types", "inputs": "dir(flow.nodes)", "outputs": "['KSampler', 'CLIPTextEncode', ...]"},
+    "1.21": {"desc": "Tab completion support: dir(api.KSampler) lists widget names", "inputs": "dir(api.KSampler)", "outputs": "['seed', 'steps', 'cfg', ...]"},
+
+    # Stage 2: Convert + Metadata
+    "2.1": {"desc": "Convert a Flow workflow to API format using node_info", "inputs": "workflow.json + node_info", "outputs": "ApiFlow (API-format dict with inputs resolved)",
+            "code": "api = Workflow('wf.json', node_info=node_info)"},
+    "2.2": {"desc": "Non-API nodes (MarkdownNote) are stripped during conversion", "inputs": "11-node workflow (4 MarkdownNote + 7 real)", "outputs": "7 API nodes (MarkdownNotes removed)"},
+    "2.3": {"desc": "Access converted node widgets via dot notation", "inputs": "api.KSampler.seed", "outputs": "Seed value from API dict"},
+    "2.4": {"desc": "Access raw API node dict by node ID string", "inputs": "api['3']", "outputs": "Node dict with class_type, inputs"},
+    "2.5": {"desc": "Convert workflow and serialize to JSON in one step", "inputs": "Workflow(path, node_info)", "outputs": "JSON string ready for ComfyUI /prompt API"},
+    "2.6": {"desc": "Convert with error reporting — returns ok, data, errors, warnings", "inputs": "Flow + node_info", "outputs": "ConvertResult with .ok, .data, .errors",
+            "code": "result = convert_with_errors(flow, node_info=ni)\nif result.ok: api = result.data"},
+    "2.7": {"desc": "Access _meta dict on API nodes (autoflow metadata)", "inputs": "api.KSampler._meta", "outputs": "Dict or None"},
+    "2.9": {"desc": "Metadata written to _meta persists through to_json() serialization", "inputs": "node['_meta'] = {...}", "outputs": "_meta present in JSON output"},
+    "2.14": {"desc": "Widget introspection: query available choices for combo widgets", "inputs": "api.KSampler.sampler_name.choices()", "outputs": "['euler', 'euler_ancestral', ...]",
+             "code": "choices = api.KSampler.sampler_name.choices()"},
+    "2.15": {"desc": "Widget introspection: get tooltip text for a widget", "inputs": "widget.tooltip()", "outputs": "Tooltip string or None"},
+    "2.16": {"desc": "Widget introspection: get full spec (type, default, min, max)", "inputs": "widget.spec()", "outputs": "Spec dict with type constraints"},
+
+    # Stage 3: Find + Navigate
+    "3.1": {"desc": "Find nodes by exact class_type match", "inputs": "find(type='KSampler')", "outputs": "1 matching node",
+            "code": "results = flow.nodes.find(type='KSampler')"},
+    "3.2": {"desc": "Find nodes case-insensitively", "inputs": "find(type='ksampler')", "outputs": "1 matching node (case-insensitive)"},
+    "3.3": {"desc": "Find nodes using regex pattern matching", "inputs": "find(type=re.compile('CLIP.*'))", "outputs": "2 CLIPTextEncode nodes",
+            "code": "import re\nresults = flow.nodes.find(type=re.compile('CLIP.*'))"},
+    "3.4": {"desc": "Find nodes by their display title", "inputs": "find(title='Note: Prompt')", "outputs": "1 matching node"},
+    "3.5": {"desc": "Find nodes by title using regex", "inputs": "find(title=re.compile('Note:.*'))", "outputs": "≥3 matching MarkdownNote nodes"},
+    "3.6": {"desc": "Multi-filter AND: type + widget value must both match", "inputs": "find(type='KSampler', seed=696969)", "outputs": "Matching nodes (AND logic)"},
+    "3.7": {"desc": "OR operator: any filter criterion can match", "inputs": "find(type='KSampler', operator='or')", "outputs": "≥1 matching node"},
+    "3.8": {"desc": "Find a specific node by its numeric ID", "inputs": "find(node_id=3)", "outputs": "1 node (node 3 = KSampler)"},
+    "3.9": {"desc": "Get the hierarchical path of a found node", "inputs": "result.path()", "outputs": "Path string like 'KSampler'"},
+    "3.10": {"desc": "Get the addressable location of a found node", "inputs": "result.address()", "outputs": "Address string"},
+    "3.11": {"desc": "Find on ApiFlow by class_type", "inputs": "api.find(class_type='KSampler')", "outputs": "Matching API nodes",
+             "code": "api = Workflow('wf.json', node_info=ni)\nresults = api.find(class_type='KSampler')"},
+    "3.13": {"desc": "Direct node lookup by string ID on ApiFlow", "inputs": "api.by_id('3')", "outputs": "Node dict for ID '3'"},
+
+    # Stage 4: Mapping
+    "4.1": {"desc": "Replace literal string values across the entire API dict", "inputs": "map_strings(api_dict, {'literal': {'Default': 'REPLACED'}})", "outputs": "All 'Default' → 'REPLACED'",
+            "code": "result = map_strings(dict(api.unwrap()), spec)"},
+    "4.5": {"desc": "Force all cached nodes to recompute (change seeds)", "inputs": "force_recompute(api)", "outputs": "Modified API dict with fresh seeds",
+            "code": "result = force_recompute(api)"},
+    "4.7": {"desc": "api_mapping calls user callback for every node+param pair", "inputs": "api_mapping(api, callback)", "outputs": "Callback receives {node_id, class_type, param, value}",
+            "code": "def cb(ctx):\n    print(ctx['class_type'], ctx['param'], ctx['value'])\napi_mapping(api, cb, node_info=ni)"},
+    "4.8": {"desc": "api_mapping callback can return a value to override a parameter", "inputs": "Return 999999 when param == 'seed'", "outputs": "All KSampler seeds changed to 999999",
+            "code": "def cb(ctx):\n    if ctx['param'] == 'seed': return 999999\napi_mapping(api, cb, node_info=ni)"},
+
+    # Stage 5: Fixtures
+    "5.1": {"desc": "Scan fixtures directory for fixture.json manifests", "inputs": "fixtures/ directory path", "outputs": "List of discovered fixture cases"},
+
+    # Stage 6: Server
+    "6.1": {"desc": "Verify ComfyUI server is reachable via HTTP", "inputs": "Server URL (e.g. http://localhost:8188)", "outputs": "HTTP 200 response"},
+    "6.2": {"desc": "Fetch live node_info from running ComfyUI server", "inputs": "NodeInfo.fetch(server_url=...)", "outputs": "Full node_info dict (~100+ node types)",
+            "code": "ni = NodeInfo.fetch(server_url='http://localhost:8188')"},
+    "6.3": {"desc": "Convert workflow using live server node_info", "inputs": "Workflow(path, server_url=...)", "outputs": "ApiFlow with live node specs"},
+
+    # Stage 7: Tools
+    "7.1": {"desc": "Verify PIL/Pillow can create, save, and reload images", "inputs": "PIL.Image.new('RGB', (64,64))", "outputs": "64×64 red PNG image"},
+}
 
 
 # ===================================================================
@@ -871,9 +1035,11 @@ def stage_4(collector: ResultCollector) -> None:
 
 
 # ===================================================================
-# STAGE 5 — Fixtures (prompted)
+# STAGE 5 — Fixtures (discovered from fixture.json manifests)
 # ===================================================================
-def stage_5(collector: ResultCollector, fixtures_dir: Optional[str]) -> None:
+def stage_5(collector: ResultCollector, fixtures_dir: Optional[str],
+            output_dir: Optional[Path] = None) -> List[FixtureCase]:
+    """Run offline fixture tests. Returns discovered fixtures for later stages."""
     stage = "Stage 5: Fixtures"
     if not fixtures_dir:
         print(f"\n{'='*60}")
@@ -881,7 +1047,7 @@ def stage_5(collector: ResultCollector, fixtures_dir: Optional[str]) -> None:
         print(f"{'='*60}\n")
         r = collector.begin(stage, "5.0", "Fixtures stage")
         collector.skip(r, "No fixtures directory provided")
-        return
+        return []
 
     print(f"\n{'='*60}")
     print(f"  {stage} — {fixtures_dir}")
@@ -891,19 +1057,79 @@ def stage_5(collector: ResultCollector, fixtures_dir: Optional[str]) -> None:
     if not fdir.is_dir():
         r = collector.begin(stage, "5.0", "Fixtures directory exists")
         collector.fail(r, f"Not a directory: {fixtures_dir}")
-        return
+        return []
 
-    # 5.1-5.7 fixture tests would go here
-    r = collector.begin(stage, "5.0", "Fixtures directory found")
-    collector.pass_(r, f"Found: {fixtures_dir}")
+    # 5.1 Discover fixtures
+    fixtures = discover_fixtures(fixtures_dir)
+    def t_5_1():
+        assert len(fixtures) > 0, f"No fixture.json manifests found in {fixtures_dir}"
+    _run_test(collector, stage, "5.1", f"Discover fixtures ({len(fixtures)} found)", t_5_1)
+
+    # Per-fixture offline tests
+    for i, fx in enumerate(fixtures):
+        prefix = f"5.{10 + i * 10}"
+        fx_stage = f"{stage} [{fx.name}]"
+
+        # Copy ground-truth into output dir
+        if output_dir:
+            copy_ground_truth(fx, output_dir)
+
+        # Load workflow
+        wf_path = fx.directory / fx.manifest.get("workflow", "workflow.json")
+
+        def t_load(wf=wf_path):
+            from autoflow import Flow
+            f = Flow.load(str(wf))
+            assert f is not None, f"Failed to load {wf.name}"
+        _run_test(collector, stage, f"{prefix}.1", f"[{fx.name}] Load workflow", t_load)
+
+        # Convert with fixture's own node_info
+        ni_path = fx.directory / fx.manifest.get("node_info", "node-info.json")
+        if ni_path.exists():
+            def t_convert(wf=wf_path, ni=ni_path):
+                from autoflow import Workflow
+                with open(ni, "r", encoding="utf-8") as fh:
+                    node_info = json.load(fh)
+                api = Workflow(str(wf), node_info=node_info)
+                assert api is not None, "Conversion failed"
+                j = api.to_json()
+                parsed = json.loads(j)
+                assert isinstance(parsed, dict), "to_json() not valid JSON"
+            _run_test(collector, stage, f"{prefix}.2", f"[{fx.name}] Convert with node_info", t_convert)
+
+            # Check expected node count
+            expected_count = fx.manifest.get("expected", {}).get("api_node_count")
+            if expected_count:
+                def t_count(wf=wf_path, ni=ni_path, exp=expected_count):
+                    from autoflow import Workflow
+                    with open(ni, "r", encoding="utf-8") as fh:
+                        node_info = json.load(fh)
+                    api = Workflow(str(wf), node_info=node_info)
+                    raw = getattr(api, "unwrap", lambda: api)()
+                    count = sum(
+                        1 for _, v in raw.items()
+                        if isinstance(v, dict) and "class_type" in v
+                    )
+                    assert count == exp, f"Expected {exp} API nodes, got {count}"
+                _run_test(collector, stage, f"{prefix}.3", f"[{fx.name}] API node count = {expected_count}", t_count)
+
+        # Check ground-truth images exist
+        if fx.ground_truth_images:
+            def t_gt(imgs=fx.ground_truth_images):
+                for img in imgs:
+                    assert img.exists(), f"Ground-truth image missing: {img}"
+            _run_test(collector, stage, f"{prefix}.4", f"[{fx.name}] Ground-truth images ({len(fx.ground_truth_images)})", t_gt)
 
     _print_stage_summary(collector, stage)
+    return fixtures
 
 
 # ===================================================================
-# STAGE 6 — Server (prompted)
+# STAGE 6 — Server (submit, progress capture, image fetch)
 # ===================================================================
-def stage_6(collector: ResultCollector, server_url: Optional[str]) -> None:
+def stage_6(collector: ResultCollector, server_url: Optional[str],
+            fixtures: Optional[List[FixtureCase]] = None,
+            output_dir: Optional[Path] = None) -> None:
     stage = "Stage 6: Server"
     if not server_url:
         print(f"\n{'='*60}")
@@ -942,60 +1168,175 @@ def stage_6(collector: ResultCollector, server_url: Optional[str]) -> None:
         assert api is not None, "Live conversion failed"
     _run_test(collector, stage, "6.3", "Workflow(wf, server_url) live convert", t_6_3)
 
-    # 6.4 Submit + wait
-    def t_6_4():
-        from autoflow import Workflow
-        api = Workflow(str(_BUNDLED_WORKFLOW), server_url=server_url)
-        api.KSampler.steps = 1  # Minimize render time
-        api.KSampler.seed = 42
-        res = api.submit(server_url=server_url, wait=True)
-        assert res is not None, "Submit returned None"
-    _run_test(collector, stage, "6.4", "submit(wait=True)", t_6_4)
+    # ---------------------------------------------------------------
+    # Per-fixture server tests: submit as-is, capture progress, fetch images
+    # ---------------------------------------------------------------
+    if fixtures:
+        for i, fx in enumerate(fixtures):
+            if not fx.manifest.get("requires_server", False):
+                continue
 
-    # 6.5 Fetch images
-    def t_6_5():
-        from autoflow import Workflow
-        api = Workflow(str(_BUNDLED_WORKFLOW), server_url=server_url)
-        api.KSampler.steps = 1
-        api.KSampler.seed = 42
-        res = api.submit(server_url=server_url, wait=True)
-        images = res.fetch_images()
-        assert images is not None, "fetch_images returned None"
-        assert len(images) > 0, "No images returned"
-    _run_test(collector, stage, "6.5", "fetch_images() returns images", t_6_5)
+            wf_path = fx.directory / fx.manifest.get("workflow", "workflow.json")
+            ni_path = fx.directory / fx.manifest.get("node_info", "node-info.json")
+            prefix = f"6.{10 + i * 10}"
+
+            # Submit as-is (no seed/steps modification!) with progress capture
+            def t_submit(wf=wf_path, ni=ni_path, fixture=fx, pfx=prefix):
+                from autoflow import Workflow
+                ni_data = None
+                if ni.exists():
+                    with open(ni, "r", encoding="utf-8") as fh:
+                        ni_data = json.load(fh)
+                api = Workflow(str(wf), node_info=ni_data) if ni_data else Workflow(str(wf), server_url=server_url)
+
+                # Apply only edits from manifest (e.g. filename_prefix)
+                edits = fixture.manifest.get("edits", {})
+                for edit_key, edit_val in edits.items():
+                    parts = edit_key.split(".")
+                    if len(parts) == 2:
+                        node_type, param = parts
+                        try:
+                            node = getattr(api, node_type)
+                            setattr(node, param, edit_val)
+                        except AttributeError:
+                            pass
+
+                # Progress callback
+                progress_events: List[Dict[str, Any]] = []
+                t_start = time.time()
+
+                def on_event(evt: Dict[str, Any]) -> None:
+                    progress_events.append({
+                        "type": evt.get("type", ""),
+                        "data": evt.get("data", {}),
+                        "elapsed_s": round(time.time() - t_start, 3),
+                    })
+                    # Print progress for feedback
+                    d = evt.get("data", {})
+                    if evt.get("type") == "progress":
+                        step = d.get("value", "?")
+                        total = d.get("max", "?")
+                        print(f"    ⏳ [{fixture.name}] Step {step}/{total}", end="\r")
+
+                # Submit with defaults (full steps, original seed)
+                res = api.submit(
+                    server_url=server_url,
+                    wait=True,
+                    on_event=on_event,
+                )
+                print()  # clear carriage return
+                assert res is not None, "Submit returned None"
+                fixture.progress_log = progress_events
+
+                # Save progress log
+                if output_dir:
+                    prog_dir = output_dir / "progress"
+                    prog_dir.mkdir(parents=True, exist_ok=True)
+                    prog_file = prog_dir / f"{fixture.directory.name}.json"
+                    prog_file.write_text(
+                        json.dumps(progress_events, indent=2),
+                        encoding="utf-8",
+                    )
+
+                # Fetch images and save to output
+                img_out = None
+                if output_dir:
+                    img_out = output_dir / fixture.directory.name / "generated"
+                    img_out.mkdir(parents=True, exist_ok=True)
+
+                images = res.fetch_images(
+                    output_path=str(img_out) if img_out else None,
+                    include_bytes=True,
+                )
+                assert images is not None, "fetch_images returned None"
+                assert len(images) > 0, "No images returned"
+
+                # Track generated image paths
+                if img_out:
+                    fixture.generated_images = sorted(img_out.glob("*.png"))
+                    # Also save any images from bytes if output_path didn't write them
+                    if not fixture.generated_images:
+                        for idx, img in enumerate(images):
+                            img_bytes = img.get("bytes")
+                            if isinstance(img_bytes, (bytes, bytearray)):
+                                out_file = img_out / f"output_{idx:05d}.png"
+                                out_file.write_bytes(img_bytes)
+                                fixture.generated_images.append(out_file)
+
+            _run_test(collector, stage, f"{prefix}.1",
+                      f"[{fx.name}] Submit + progress capture + fetch images", t_submit)
+
+            # Verify expected image count
+            expected_imgs = fx.manifest.get("expected", {}).get("output_image_count")
+            if expected_imgs is not None:
+                def t_img_count(fixture=fx, exp=expected_imgs):
+                    actual = len(fixture.generated_images)
+                    assert actual == exp, f"Expected {exp} output images, got {actual}"
+                _run_test(collector, stage, f"{prefix}.2",
+                          f"[{fx.name}] Output image count = {expected_imgs}", t_img_count)
+    else:
+        # No fixtures — run a minimal submit test with bundled workflow
+        def t_6_4():
+            from autoflow import Workflow
+            api = Workflow(str(_BUNDLED_WORKFLOW), server_url=server_url)
+            # Submit as-is — no modifications
+            res = api.submit(server_url=server_url, wait=True)
+            assert res is not None, "Submit returned None"
+            images = res.fetch_images()
+            assert images is not None and len(images) > 0, "No images returned"
+        _run_test(collector, stage, "6.4", "submit(wait=True) + fetch_images()", t_6_4)
 
     _print_stage_summary(collector, stage)
 
 
 # ===================================================================
-# STAGE 7 — Tools (prompted)
+# STAGE 7 — Tools (image comparison, etc.)
 # ===================================================================
-def stage_7(collector: ResultCollector, has_pil: bool, magick_path: Optional[str],
-            ffmpeg_path: Optional[str]) -> None:
+def stage_7(collector: ResultCollector, has_pil: bool,
+            fixtures: Optional[List[FixtureCase]] = None) -> None:
     stage = "Stage 7: Tools"
-    if not has_pil and not magick_path and not ffmpeg_path:
+    if not has_pil:
         print(f"\n{'='*60}")
         print(f"  {stage} — SKIPPED (no tools available)")
         print(f"{'='*60}\n")
         r = collector.begin(stage, "7.0", "Tools stage")
-        collector.skip(r, "No tools provided")
+        collector.skip(r, "PIL not available")
         return
 
     print(f"\n{'='*60}")
     print(f"  {stage}")
     print(f"{'='*60}\n")
 
-    if has_pil:
-        def t_7_1():
-            from PIL import Image
-            # Create a simple test image and verify
-            img = Image.new("RGB", (64, 64), color=(255, 0, 0))
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                img.save(tmp.name)
-                loaded = Image.open(tmp.name)
-                assert loaded.size == (64, 64), f"Image size mismatch: {loaded.size}"
-                os.unlink(tmp.name)
-        _run_test(collector, stage, "7.1", "PIL: create + load image", t_7_1)
+    # 7.1 PIL available
+    def t_7_1():
+        from PIL import Image
+        img = Image.new("RGB", (64, 64), color=(255, 0, 0))
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            img.save(tmp.name)
+            loaded = Image.open(tmp.name)
+            assert loaded.size == (64, 64), f"Image size mismatch: {loaded.size}"
+            os.unlink(tmp.name)
+    _run_test(collector, stage, "7.1", "PIL: create + load image", t_7_1)
+
+    # 7.2 Per-fixture image size comparison (ground-truth vs generated)
+    if fixtures:
+        for i, fx in enumerate(fixtures):
+            if not fx.ground_truth_images or not fx.generated_images:
+                continue
+
+            def t_compare(fixture=fx):
+                from PIL import Image
+                for gt_img in fixture.ground_truth_images:
+                    gt = Image.open(gt_img)
+                    # Just verify generated images are same dimensions
+                    for gen_path in fixture.generated_images:
+                        gen = Image.open(gen_path)
+                        assert gt.size == gen.size, (
+                            f"Size mismatch: ground-truth {gt.size} vs "
+                            f"generated {gen.size}"
+                        )
+            _run_test(collector, stage, f"7.{10 + i}",
+                      f"[{fx.name}] Image dimensions match ground-truth", t_compare)
 
     _print_stage_summary(collector, stage)
 
@@ -1022,14 +1363,29 @@ def _print_stage_summary(collector: ResultCollector, stage: str) -> None:
     print(f"\n  Summary: {passed} passed, {failed} failed, {errors} errors, {skipped} skipped\n")
 
 
-def generate_html_report(collector: ResultCollector, output_path: str) -> str:
-    """Generate a standalone HTML report."""
+def generate_html_report(collector: ResultCollector, output_path: str,
+                         fixtures: Optional[List[FixtureCase]] = None) -> str:
+    """Generate an HTML investigation dashboard with test details, images, and progress."""
     import autoflow
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     stages = collector.by_stage()
+    out_dir = Path(output_path).parent
 
-    rows = []
+    total = len(collector.results)
+    passed = sum(1 for r in collector.results if r.status == "PASS")
+    failed = sum(1 for r in collector.results if r.status == "FAIL")
+    errors = sum(1 for r in collector.results if r.status == "ERROR")
+    skipped = sum(1 for r in collector.results if r.status == "SKIP")
+    overall_color = "#2d5016" if collector.all_passed else "#8b1a1a"
+
+    # --- Build stage sections with expandable rows ---
+    stage_sections = ""
     for stage_name, results in stages.items():
+        stage_passed = sum(1 for r in results if r.status == "PASS")
+        stage_total = len(results)
+        stage_icon = "✅" if stage_passed == stage_total else "❌"
+
+        rows = ""
         for r in results:
             color = {
                 "PASS": "#2d5016", "FAIL": "#8b1a1a",
@@ -1037,33 +1393,160 @@ def generate_html_report(collector: ResultCollector, output_path: str) -> str:
             }.get(r.status, "#333")
             icon = {"PASS": "✅", "FAIL": "❌", "ERROR": "💥", "SKIP": "⏭️"}.get(r.status, "?")
             msg_html = html_mod.escape(r.message) if r.message else ""
-            rows.append(f"""
-            <tr style="background: {color}22;">
-                <td>{html_mod.escape(r.test_id)}</td>
+
+            # Get catalog info for this test
+            cat = TEST_CATALOG.get(r.test_id, r.detail or {})
+            desc = cat.get("desc", "")
+            inputs = cat.get("inputs", "")
+            outputs = cat.get("outputs", "")
+            code = cat.get("code", "")
+
+            has_detail = bool(desc or inputs or outputs or code or msg_html)
+            clickable = ' class="expandable" onclick="toggleDetail(this)"' if has_detail else ''
+
+            # Tooltip text
+            tooltip = html_mod.escape(desc) if desc else ""
+
+            rows += f"""
+            <tr style="background: {color}22;"{clickable} title="{tooltip}">
+                <td class="id-col">{html_mod.escape(r.test_id)}</td>
                 <td>{icon} {html_mod.escape(r.name)}</td>
                 <td><strong>{r.status}</strong></td>
                 <td>{r.duration_s:.3f}s</td>
-                <td><pre style="margin:0;white-space:pre-wrap;font-size:0.8em;">{msg_html}</pre></td>
-            </tr>""")
+                <td class="arrow-col">{'▶' if has_detail else ''}</td>
+            </tr>"""
 
-    total = len(collector.results)
-    passed = sum(1 for r in collector.results if r.status == "PASS")
-    failed = sum(1 for r in collector.results if r.status == "FAIL")
-    errors = sum(1 for r in collector.results if r.status == "ERROR")
-    skipped = sum(1 for r in collector.results if r.status == "SKIP")
+            if has_detail:
+                detail_parts = []
+                if desc:
+                    detail_parts.append(f'<div class="detail-desc">{html_mod.escape(desc)}</div>')
+                if inputs or outputs:
+                    io_html = '<div class="detail-io">'
+                    if inputs:
+                        io_html += f'<div class="io-box"><span class="io-label">INPUT</span> {html_mod.escape(inputs)}</div>'
+                    if outputs:
+                        io_html += f'<div class="io-box"><span class="io-label">OUTPUT</span> {html_mod.escape(outputs)}</div>'
+                    io_html += '</div>'
+                    detail_parts.append(io_html)
+                if code:
+                    detail_parts.append(f'<div class="detail-code"><pre>{html_mod.escape(code)}</pre></div>')
+                if msg_html and r.status != "PASS":
+                    detail_parts.append(f'<div class="detail-msg"><strong>Message:</strong><pre>{msg_html}</pre></div>')
 
-    overall_color = "#2d5016" if collector.all_passed else "#8b1a1a"
+                rows += f"""
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content">{"".join(detail_parts)}</div>
+                </td>
+            </tr>"""
 
+        stage_sections += f"""
+    <div class="stage-section">
+        <h2 class="stage-header" onclick="toggleStage(this)">
+            {stage_icon} {html_mod.escape(stage_name)}
+            <span class="stage-count">{stage_passed}/{stage_total}</span>
+            <span class="stage-toggle">▼</span>
+        </h2>
+        <div class="stage-body">
+            <table>
+            <thead><tr><th style="width:60px">ID</th><th>Test</th><th style="width:70px">Status</th><th style="width:70px">Time</th><th style="width:30px"></th></tr></thead>
+            <tbody>{rows}</tbody>
+            </table>
+        </div>
+    </div>"""
+
+    # --- Build image comparison sections ---
+    image_sections = ""
+    if fixtures:
+        for fx in fixtures:
+            if not fx.ground_truth_images and not fx.generated_images:
+                continue
+            section = f'<div class="fixture-card">\n'
+            section += f'<h2>🖼️ {html_mod.escape(fx.name)}</h2>\n'
+            section += '<div class="image-comparison">\n'
+
+            # Ground truth column
+            if fx.ground_truth_images:
+                section += '<div class="image-col">\n<h3>Ground Truth</h3>\n'
+                for img in fx.ground_truth_images:
+                    rel = os.path.relpath(str(out_dir / fx.directory.name / "ground-truth" / img.name), str(out_dir))
+                    section += f'<a href="{rel}" target="_blank" class="img-link">'
+                    section += f'<img src="{rel}" alt="{html_mod.escape(img.name)}" />'
+                    section += f'</a>\n<span class="img-label">{html_mod.escape(img.name)}</span>\n'
+                section += '</div>\n'
+
+            # Generated column (always show)
+            section += '<div class="image-col">\n<h3>Generated</h3>\n'
+            if fx.generated_images:
+                for img in fx.generated_images:
+                    rel = os.path.relpath(str(img), str(out_dir))
+                    section += f'<a href="{rel}" target="_blank" class="img-link">'
+                    section += f'<img src="{rel}" alt="{html_mod.escape(img.name)}" />'
+                    section += f'</a>\n<span class="img-label">{html_mod.escape(img.name)}</span>\n'
+            else:
+                section += '<div class="no-image-placeholder">'
+                section += '<p>⏳ No generated images</p>'
+                section += '<p class="img-label">Run with --server-url to generate output images</p>'
+                section += '</div>\n'
+            section += '</div>\n'
+            section += '</div>\n'  # end image-comparison
+
+            # Progress timeline
+            if fx.progress_log:
+                progress_steps = [e for e in fx.progress_log if e.get("type") == "progress"]
+                if progress_steps:
+                    last = progress_steps[-1]
+                    data = last.get("data", {})
+                    max_val = data.get("max", 1)
+                    cur_val = data.get("value", 0)
+                    pct = int(cur_val / max_val * 100) if max_val else 100
+                    elapsed = last.get("elapsed_s", 0)
+                    section += f'<div class="progress-info">\n'
+                    section += f'<strong>Progress:</strong> {cur_val}/{max_val} steps ({pct}%) — {elapsed:.1f}s\n'
+                    section += f'<div class="progress-bar"><div class="progress-fill" style="width:{pct}%"></div></div>\n'
+
+                    # Step-by-step timeline
+                    section += '<div class="progress-timeline">\n'
+                    for step in progress_steps:
+                        s_data = step.get("data", {})
+                        s_val = s_data.get("value", 0)
+                        s_max = s_data.get("max", 1)
+                        s_time = step.get("elapsed_s", 0)
+                        section += f'<div class="timeline-step" title="Step {s_val}/{s_max} at {s_time:.1f}s">'
+                        section += f'<span class="timeline-dot"></span>'
+                        section += f'</div>\n'
+                    section += '</div>\n'  # end timeline
+                    section += '</div>\n'  # end progress-info
+
+                # Show all raw events
+                all_events = fx.progress_log
+                if all_events:
+                    section += '<details class="events-log">\n'
+                    section += f'<summary>📋 Raw events ({len(all_events)} captured)</summary>\n'
+                    section += '<pre class="events-pre">'
+                    for evt in all_events:
+                        section += html_mod.escape(json.dumps(evt, indent=None)) + '\n'
+                    section += '</pre>\n</details>\n'
+
+            section += '</div>\n'  # end fixture-card
+            image_sections += section
+
+    # --- Assemble HTML ---
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>autoflow Master Test Report</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>autoflow Test Dashboard</title>
 <style>
-  body {{ font-family: 'Inter', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 2rem; }}
-  h1 {{ color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 0.5rem; }}
-  h2 {{ color: #8b949e; margin-top: 2rem; }}
-  .summary {{ display: flex; gap: 1rem; margin: 1rem 0; }}
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 2rem; line-height: 1.6; }}
+  h1 {{ color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }}
+  h2 {{ color: #8b949e; margin-top: 1.5rem; margin-bottom: 0.5rem; }}
+  h3 {{ color: #58a6ff; margin: 0.5rem 0; font-size: 0.95em; }}
+
+  /* Summary stats */
+  .summary {{ display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }}
   .stat {{ padding: 1rem 1.5rem; border-radius: 8px; text-align: center; min-width: 100px; }}
   .stat-label {{ font-size: 0.8em; color: #8b949e; }}
   .stat-value {{ font-size: 2em; font-weight: bold; }}
@@ -1075,20 +1558,89 @@ def generate_html_report(collector: ResultCollector, output_path: str) -> str:
   .skip .stat-value {{ color: #d29922; }}
   .error {{ background: #8b451322; border: 1px solid #8b4513; }}
   .error .stat-value {{ color: #db6d28; }}
-  table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
-  th, td {{ padding: 0.5rem 0.75rem; text-align: left; border: 1px solid #30363d; }}
-  th {{ background: #161b22; color: #8b949e; font-weight: 600; }}
-  pre {{ color: #f0f0f0; }}
   .overall {{ padding: 1rem; border-radius: 8px; background: {overall_color}44; border: 2px solid {overall_color}; margin-bottom: 1rem; text-align: center; font-size: 1.2em; }}
+  .env-info {{ color: #8b949e; font-size: 0.9em; margin-bottom: 1rem; }}
+  .env-info strong {{ color: #c9d1d9; }}
+
+  /* Stage sections */
+  .stage-section {{ margin-bottom: 1rem; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }}
+  .stage-header {{ background: #161b22; margin: 0; padding: 0.75rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; user-select: none; font-size: 1em; }}
+  .stage-header:hover {{ background: #1c2128; }}
+  .stage-count {{ margin-left: auto; font-size: 0.85em; color: #8b949e; }}
+  .stage-toggle {{ font-size: 0.7em; color: #484f58; transition: transform 0.2s; }}
+  .stage-body {{ padding: 0; }}
+  .stage-body.collapsed {{ display: none; }}
+
+  /* Test table */
+  table {{ border-collapse: collapse; width: 100%; }}
+  th, td {{ padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #21262d; }}
+  th {{ background: #0d1117; color: #8b949e; font-weight: 600; font-size: 0.85em; }}
+  pre {{ color: #f0f0f0; margin: 0; }}
+  .id-col {{ font-family: monospace; font-size: 0.85em; color: #8b949e; }}
+  .arrow-col {{ text-align: center; color: #484f58; font-size: 0.8em; transition: transform 0.2s; }}
+
+  /* Expandable rows */
+  .expandable {{ cursor: pointer; }}
+  .expandable:hover {{ background: #161b2244 !important; }}
+  .expandable:hover .arrow-col {{ color: #58a6ff; }}
+  .detail-row td {{ padding: 0; background: #161b22; }}
+  .detail-content {{ padding: 0.75rem 1rem 0.75rem 4rem; border-left: 3px solid #58a6ff; animation: slideDown 0.15s ease-out; }}
+  @keyframes slideDown {{ from {{ opacity: 0; max-height: 0; }} to {{ opacity: 1; max-height: 500px; }} }}
+
+  .detail-desc {{ color: #c9d1d9; margin-bottom: 0.5rem; font-size: 0.9em; }}
+  .detail-io {{ display: flex; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }}
+  .io-box {{ background: #21262d; border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.85em; flex: 1; min-width: 200px; }}
+  .io-label {{ display: inline-block; background: #30363d; color: #58a6ff; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75em; font-weight: 600; margin-right: 0.5rem; letter-spacing: 0.05em; }}
+  .detail-code {{ background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; }}
+  .detail-code pre {{ font-size: 0.85em; color: #79c0ff; white-space: pre-wrap; word-break: break-word; }}
+  .detail-msg {{ margin-top: 0.5rem; }}
+  .detail-msg pre {{ font-size: 0.8em; color: #f85149; white-space: pre-wrap; word-break: break-word; }}
+
+  /* Fixture cards */
+  .fixture-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.5rem; margin-top: 1.5rem; }}
+  .fixture-card h2 {{ margin-top: 0; color: #c9d1d9; }}
+
+  /* Image comparison */
+  .image-comparison {{ display: flex; gap: 2rem; margin: 1rem 0; flex-wrap: wrap; }}
+  .image-col {{ flex: 1; min-width: 280px; }}
+  .image-col img {{ max-width: 100%; border-radius: 8px; border: 1px solid #30363d; cursor: pointer; transition: transform 0.2s; }}
+  .image-col img:hover {{ transform: scale(1.02); box-shadow: 0 0 20px rgba(88,166,255,0.3); }}
+  .img-link {{ display: block; margin-bottom: 0.5rem; }}
+  .img-label {{ font-size: 0.8em; color: #8b949e; display: block; margin-bottom: 1rem; }}
+  .no-image-placeholder {{ border: 2px dashed #30363d; border-radius: 8px; padding: 3rem 2rem; text-align: center; color: #484f58; min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; }}
+  .no-image-placeholder p {{ margin: 0.25rem 0; }}
+
+  /* Progress */
+  .progress-info {{ background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 1rem; }}
+  .progress-bar {{ background: #21262d; border-radius: 4px; height: 8px; margin-top: 0.5rem; overflow: hidden; }}
+  .progress-fill {{ background: linear-gradient(90deg, #3fb950, #58a6ff); height: 100%; border-radius: 4px; transition: width 0.3s; }}
+  .progress-timeline {{ display: flex; gap: 2px; margin-top: 0.5rem; flex-wrap: wrap; }}
+  .timeline-step {{ position: relative; }}
+  .timeline-dot {{ display: inline-block; width: 6px; height: 6px; background: #3fb950; border-radius: 50%; }}
+  .timeline-step:hover .timeline-dot {{ background: #58a6ff; transform: scale(1.5); }}
+
+  /* Events log */
+  .events-log {{ margin-top: 0.75rem; }}
+  .events-log summary {{ cursor: pointer; color: #8b949e; font-size: 0.85em; }}
+  .events-log summary:hover {{ color: #58a6ff; }}
+  .events-pre {{ max-height: 300px; overflow-y: auto; font-size: 0.75em; padding: 0.5rem; background: #0d1117; border: 1px solid #21262d; border-radius: 4px; }}
+
+  /* Lightbox */
+  .lightbox {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; align-items: center; justify-content: center; cursor: pointer; }}
+  .lightbox.active {{ display: flex; }}
+  .lightbox img {{ max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; }}
 </style>
 </head>
 <body>
-<h1>🧪 autoflow Master Test Report</h1>
-<div class="overall">{'ALL TESTS PASSED' if collector.all_passed else 'SOME TESTS FAILED'}</div>
-<p><strong>Version:</strong> {html_mod.escape(autoflow.__version__)} &nbsp;|&nbsp;
+<h1>🧪 autoflow Test Dashboard</h1>
+<div class="overall">{'🎉 ALL TESTS PASSED' if collector.all_passed else '⚠️ SOME TESTS FAILED'}</div>
+<p class="env-info">
+<strong>Version:</strong> {html_mod.escape(autoflow.__version__)} &nbsp;|&nbsp;
 <strong>Python:</strong> {html_mod.escape(sys.version.split()[0])} &nbsp;|&nbsp;
 <strong>OS:</strong> {html_mod.escape(sys.platform)} &nbsp;|&nbsp;
-<strong>Date:</strong> {now}</p>
+<strong>Date:</strong> {now} &nbsp;|&nbsp;
+<strong>Total:</strong> {total} tests
+</p>
 
 <div class="summary">
   <div class="stat pass"><div class="stat-value">{passed}</div><div class="stat-label">Passed</div></div>
@@ -1097,12 +1649,62 @@ def generate_html_report(collector: ResultCollector, output_path: str) -> str:
   <div class="stat skip"><div class="stat-value">{skipped}</div><div class="stat-label">Skipped</div></div>
 </div>
 
-<table>
-<thead><tr><th>ID</th><th>Test</th><th>Status</th><th>Time</th><th>Details</th></tr></thead>
-<tbody>{"".join(rows)}</tbody>
-</table>
+{stage_sections}
 
-<p style="color:#484f58;margin-top:2rem;">Generated by autoflow master_test.py</p>
+{image_sections}
+
+<div id="lightbox" class="lightbox" onclick="this.classList.remove('active')">
+  <img id="lightbox-img" src="" alt="Full resolution" />
+</div>
+
+<script>
+// Toggle detail row
+function toggleDetail(row) {{
+  const detail = row.nextElementSibling;
+  if (detail && detail.classList.contains('detail-row')) {{
+    const arrow = row.querySelector('.arrow-col');
+    if (detail.style.display === 'none' || !detail.style.display) {{
+      detail.style.display = '';
+      if (arrow) arrow.textContent = '▼';
+    }} else {{
+      detail.style.display = 'none';
+      if (arrow) arrow.textContent = '▶';
+    }}
+  }}
+}}
+
+// Toggle stage collapse
+function toggleStage(header) {{
+  const body = header.nextElementSibling;
+  const toggle = header.querySelector('.stage-toggle');
+  if (body) {{
+    body.classList.toggle('collapsed');
+    if (toggle) toggle.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+  }}
+}}
+
+// Lightbox for images
+document.querySelectorAll('.image-col img').forEach(img => {{
+  img.addEventListener('click', function(e) {{
+    e.preventDefault();
+    e.stopPropagation();
+    const lb = document.getElementById('lightbox');
+    const lbImg = document.getElementById('lightbox-img');
+    lbImg.src = this.parentElement.href || this.src;
+    lb.classList.add('active');
+  }});
+}});
+
+// Auto-expand failed tests
+document.querySelectorAll('.expandable').forEach(row => {{
+  const statusCell = row.querySelector('td:nth-child(3) strong');
+  if (statusCell && (statusCell.textContent === 'FAIL' || statusCell.textContent === 'ERROR')) {{
+    toggleDetail(row);
+  }}
+}});
+</script>
+
+<p style="color:#484f58;margin-top:2rem;font-size:0.85em;">Generated by autoflow test suite — click any test row for details</p>
 </body>
 </html>"""
 
@@ -1119,16 +1721,36 @@ def main() -> int:
     parser.add_argument("--non-interactive", action="store_true",
                         help="Skip all prompted stages (CI mode)")
     parser.add_argument("--fixtures-dir", type=str, default=None,
-                        help="Path to autoflow-testdata fixtures directory")
+                        help="Path to fixtures directory (auto-discovers fixture.json manifests)")
     parser.add_argument("--server-url", type=str, default=None,
                         help="ComfyUI server URL for live tests")
-    parser.add_argument("--report", type=str, default=None,
-                        help="Output path for HTML report (default: auto)")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory for results (default: autoflow-test-suite/outputs/)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Launch python -m http.server on this port to serve results")
+    parser.add_argument("--no-clean", action="store_true",
+                        help="Don't wipe output directory before running")
     parser.add_argument("--no-browser", action="store_true",
-                        help="Don't open HTML report in browser")
+                        help="Don't open report in browser")
     args = parser.parse_args()
 
     collector = ResultCollector()
+
+    # --- Resolve output directory ---
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    elif args.fixtures_dir:
+        # Default: sibling 'outputs' dir next to fixtures
+        output_dir = Path(args.fixtures_dir).parent / "outputs"
+    else:
+        output_dir = Path(_REPO_ROOT / "autoflow-test-suite" / "outputs")
+
+    # --- Clean output directory ---
+    if not args.no_clean:
+        clean_output_dir(output_dir)
+        print(f"  🧹 Cleaned output directory: {output_dir}")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 60)
     print("  autoflow — Master Test Suite")
@@ -1145,23 +1767,46 @@ def main() -> int:
     fixtures_dir = args.fixtures_dir
     server_url = args.server_url
     has_pil = False
-    magick_path = None
-    ffmpeg_path = None
 
     if not args.non_interactive:
         if not fixtures_dir:
-            fixtures_dir = input("\nEnter path to autoflow-testdata directory (or press Enter to skip): ").strip() or None
+            default_fixtures = _REPO_ROOT / "autoflow-test-suite" / "fixtures"
+            hint = f" [{default_fixtures}]" if default_fixtures.is_dir() else ""
+            ans = input(f"\nFixtures directory{hint} (Enter for default, 'skip' to skip): ").strip()
+            if ans.lower() == "skip":
+                fixtures_dir = None
+            elif ans:
+                fixtures_dir = ans
+            elif default_fixtures.is_dir():
+                fixtures_dir = str(default_fixtures)
+            else:
+                fixtures_dir = None
+
         if not server_url:
-            server_url = input("Enter ComfyUI server URL (or press Enter to skip): ").strip() or None
+            server_url = input("ComfyUI server URL (or Enter to skip): ").strip() or None
 
-        pil_ans = input("Do you have PIL/Pillow installed? (y/n, Enter to skip): ").strip().lower()
-        has_pil = pil_ans in ("y", "yes")
-        magick_path = input("Enter path to ImageMagick convert binary (or Enter to skip): ").strip() or None
-        ffmpeg_path = input("Enter path to ffmpeg binary (or Enter to skip): ").strip() or None
+        # Auto-detect PIL
+        try:
+            import PIL  # noqa: F401
+            has_pil = True
+        except ImportError:
+            pil_ans = input("PIL/Pillow not detected. Install it? (y/n): ").strip().lower()
+            if pil_ans in ("y", "yes"):
+                print("  Installing Pillow...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow", "-q"])
+                has_pil = True
+    else:
+        # Non-interactive: auto-detect PIL silently
+        try:
+            import PIL  # noqa: F401
+            has_pil = True
+        except ImportError:
+            pass
 
-    stage_5(collector, fixtures_dir)
-    stage_6(collector, server_url)
-    stage_7(collector, has_pil, magick_path, ffmpeg_path)
+    # Run fixture stages
+    fixtures = stage_5(collector, fixtures_dir, output_dir=output_dir)
+    stage_6(collector, server_url, fixtures=fixtures, output_dir=output_dir)
+    stage_7(collector, has_pil, fixtures=fixtures)
 
     # --- Final summary ---
     print("\n" + "=" * 60)
@@ -1188,16 +1833,34 @@ def main() -> int:
                         print(f"       {line}")
                 print()
 
-    # Generate HTML report
-    report_path = args.report
-    if not report_path:
-        report_dir = tempfile.mkdtemp(prefix="autoflow_report_")
-        report_path = os.path.join(report_dir, "test_report.html")
+    # Generate HTML report as index.html in output dir
+    report_path = str(output_dir / "index.html")
+    generate_html_report(collector, report_path, fixtures=fixtures)
+    print(f"  📄 Report: {report_path}")
 
-    generate_html_report(collector, report_path)
-    print(f"  📄 HTML report: {report_path}")
+    # --- Serve via http.server ---
+    if args.port:
+        port = args.port
+        print(f"\n  🌐 Serving results at http://localhost:{port}")
+        print(f"     Serving from: {output_dir}")
+        print(f"     Press Ctrl+C to stop\n")
 
-    if not args.no_browser:
+        if not args.no_browser:
+            # Open browser after a short delay (give server time to start)
+            import threading
+            def _open_browser():
+                time.sleep(1.0)
+                webbrowser.open(f"http://localhost:{port}")
+            threading.Thread(target=_open_browser, daemon=True).start()
+
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "http.server", str(port)],
+                cwd=str(output_dir),
+            )
+        except KeyboardInterrupt:
+            print("\n  Server stopped.")
+    elif not args.no_browser:
         try:
             webbrowser.open(f"file://{os.path.abspath(report_path)}")
         except Exception:
