@@ -254,17 +254,19 @@ If you're running inside a ComfyUI environment (repo + venv), you can run workfl
   - all `.load()` methods auto-detect input type: [`docs/load-vs-convert.md`](docs/load-vs-convert.md)
   - extract workflows from ComfyUI PNG outputs (no dependencies)
 - **OOP node access**:
-  - `api.ksampler[0].seed = 42` — attribute-style access by class_type
+  - `api.KSampler.seed = 42` — attribute-style access by class_type
   - `api.find(class_type="KSampler")[0].seed = 42` — search + then edit (returns NodeProxy objects)
-  - `api.ksampler[0]._meta` / `.meta` — access node metadata
+  - `api.KSampler._meta` / `.meta` — access node metadata
   - `api["ksampler/seed"]` — path-style access
   - `api["18:17:3/seed"] = 42` — edit nodes inside flattened subgraph exports (ComfyUI-style path IDs)
-  - `flow.nodes.ksampler[0].type` — explicit via `.nodes` for workspace flows
+  - `flow.nodes.KSampler.type` — explicit via `.nodes` for workspace flows
   - `flow.nodes.find(title="NewSubgraphName")[0].path()` — find renamed subgraph instances; prints a stable path like `18:17:3`
   - `flow.extra.ds.scale` — drill into nested dicts with `DictView`
   - `node.properties.models.url` — single-item list-of-dicts drill via `ListView` (otherwise index first)
   - **Widget-value repr**: `NodeRef`/`NodeSet` display widget values as dicts — `f.nodes.CheckpointLoaderSimple` → `{'nodes.CheckpointLoaderSimple[0]': {'ckpt_name': '...'}}`
   - **Widget introspection**: `.choices()` returns valid combo options, `.tooltip()` shows help text, `.spec()` gives the raw `node_info` spec
+  - **Tab completion**: curated `__dir__` on `ApiFlow`, `NodeSet`, `FlowTreeNodesView`, and `WidgetValue` — only shows user-facing attrs
+  - **Indexed nodes**: standard Python REPL can't tab-complete `api.KSampler[0].<tab>` — assign to a variable first: `k = api.KSampler[0]` then `k.<tab>`
 - **Mapping** (seeds/paths/prompts):
   - typed callback mapping: [`docs/mapping.md`](docs/mapping.md)
   - declarative string/path mapping: [`docs/map-strings-and-paths.md`](docs/map-strings-and-paths.md)
