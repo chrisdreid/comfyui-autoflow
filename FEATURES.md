@@ -58,6 +58,9 @@ This page is intentionally short. Each feature links to the relevant docs for de
 - **Stable addressing**: `.path()` / `.address()` helpers for repeatable targeting (including flattened subgraph-style IDs like `18:17:3`).  
   - Details: [`docs/convert.md`](docs/convert.md)
 
+- **Node bypass / mute**: `node.bypass = True` skips nodes during conversion (mirrors the ComfyUI GUI mute/bypass), `node.bypass = False` re-enables.  
+  - Converter automatically excludes bypassed (mode 4) and muted (mode 2) nodes from the API payload
+
 - **Metadata that carries through**: Add metadata to the workflow that persists into the converted payload (and can be used for targeting/mapping).  
   - Details: [`docs/mapping.md`](docs/mapping.md)
 
