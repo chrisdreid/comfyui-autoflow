@@ -3,25 +3,37 @@
 autoflow — Modular Test Suite
 ==============================
 
-Slim orchestrator that auto-discovers ``stages/stage_*.py`` modules and
-runs them in order.  Every stage exports ``run(collector, **kwargs)``
-and uses the shared ``harness`` infrastructure.
+Slim orchestrator that auto-discovers test modules and runs them in order.
+Every module exports ``run(collector, **kwargs)`` and uses the shared
+``harness`` infrastructure.
+
+Modes:
+  - **Phases** (``--phases``, default): discovers ``stages/phase_*.py``
+    — 8 sequential phases following the data pipeline.
+  - **Legacy stages** (``--stage N``): discovers ``stages/stage_*.py``
+    — the original 27-stage layout.
 
 Usage::
 
-    # Auto stages only (CI-safe, no prompts)
+    # Run all phases (CI-safe, no prompts)
     python examples/unittests/main.py --non-interactive
 
-    # Full interactive
-    python examples/unittests/main.py
+    # Legacy: run all old stages
+    python examples/unittests/main.py --legacy --non-interactive
 
-    # With CLI overrides (skip prompts)
-    python examples/unittests/main.py --fixtures-dir /path/to/testdata --server-url http://localhost:8188
+    # Run with node-info override
+    python examples/unittests/main.py --non-interactive --node-info /path/to/node-info.json
 
-    # Run a specific stage
-    python examples/unittests/main.py --stage 16
+    # Include docs tests
+    python examples/unittests/main.py --non-interactive --docs
 
-    # List all stages
+    # Run a specific phase
+    python examples/unittests/main.py --phase 3
+
+    # Legacy: run a specific old stage
+    python examples/unittests/main.py --legacy --stage 16
+
+    # List all discovered modules
     python examples/unittests/main.py --list
 """
 
@@ -29,10 +41,13 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json as _json_mod
 import os
+import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -62,7 +77,7 @@ from harness import (  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Stage discovery
+# Stage / phase discovery
 # ---------------------------------------------------------------------------
 _STAGES_DIR = _UNITTEST_DIR / "stages"
 
@@ -85,15 +100,72 @@ def _discover_stages() -> List[Tuple[int, str, Any]]:
     return stages
 
 
-# ---------------------------------------------------------------------------
-# Prompted stages: fixtures, server, PIL
-# ---------------------------------------------------------------------------
-def _resolve_prompted_kwargs(args) -> Dict[str, Any]:
-    """Resolve interactive prompts for fixtures_dir, server_url, has_pil."""
-    fixtures_dir = args.fixtures_dir
-    server_url = args.server_url
-    has_pil = False
+def _discover_phases() -> List[Tuple[int, str, Any]]:
+    """Return sorted list of (phase_num, module_name, module) for every phase_*.py."""
+    phases: List[Tuple[int, str, Any]] = []
+    for path in sorted(_STAGES_DIR.glob("phase_*.py")):
+        stem = path.stem  # e.g. phase_03_flow
+        parts = stem.split("_", 2)  # ["phase", "03", "flow"]
+        if len(parts) < 2:
+            continue
+        try:
+            num = int(parts[1])
+        except ValueError:
+            continue
+        mod_name = f"stages.{stem}"
+        mod = importlib.import_module(mod_name)
+        phases.append((num, mod_name, mod))
+    return phases
 
+
+# ---------------------------------------------------------------------------
+# Environment detection
+# ---------------------------------------------------------------------------
+def _check_pil() -> bool:
+    try:
+        import PIL  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _check_server(url: Optional[str]) -> Optional[str]:
+    """Return the server URL if reachable, else None."""
+    if not url:
+        return None
+    try:
+        resp = urllib.request.urlopen(f"{url.rstrip('/')}/system_stats", timeout=3)
+        if resp.status == 200:
+            return url
+    except Exception:
+        pass
+    return None
+
+
+def _check_comfyui_modules() -> Optional[str]:
+    """Return ComfyUI root path if importable, else None."""
+    try:
+        from autoflow.convert import _detect_comfyui_root_from_imports
+        root = _detect_comfyui_root_from_imports()
+        return str(root) if root else None
+    except Exception:
+        return None
+
+
+def _check_binary(name: str, override: Optional[str] = None) -> Optional[str]:
+    """Return full path to a binary, or None."""
+    if override:
+        p = shutil.which(override)
+        return p if p else override if os.path.isfile(override) else None
+    return shutil.which(name)
+
+
+def detect_environment(args) -> Dict[str, Any]:
+    """Probe for all optional environments and return a summary dict."""
+    server_url = args.server_url
+
+    # Interactive prompts
+    fixtures_dir = args.fixtures_dir
     if not args.non_interactive:
         if not fixtures_dir:
             default_fixtures = _REPO_ROOT / "autoflow-test-suite" / "fixtures"
@@ -105,9 +177,6 @@ def _resolve_prompted_kwargs(args) -> Dict[str, Any]:
                 fixtures_dir = ans
             elif default_fixtures.is_dir():
                 fixtures_dir = str(default_fixtures)
-            else:
-                fixtures_dir = None
-
         if not server_url:
             ans = input("ComfyUI server URL [http://localhost:8188] (Enter for localhost, 'skip' to skip): ").strip()
             if ans.lower() == "skip":
@@ -117,27 +186,70 @@ def _resolve_prompted_kwargs(args) -> Dict[str, Any]:
             else:
                 server_url = "http://localhost:8188"
 
-        try:
-            import PIL  # noqa: F401
-            has_pil = True
-        except ImportError:
-            pil_ans = input("PIL/Pillow not detected. Install it? (y/n): ").strip().lower()
-            if pil_ans in ("y", "yes"):
-                print("  Installing Pillow...")
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow", "-q"])
-                has_pil = True
-    else:
-        try:
-            import PIL  # noqa: F401
-            has_pil = True
-        except ImportError:
-            pass
+    # --- Detect everything ---
+    has_pil = _check_pil()
+    server_ok = _check_server(server_url)
+    comfyui_root = _check_comfyui_modules()
 
-    return {
+    # Python & pip versions
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    try:
+        import pip
+        pip_version = pip.__version__
+    except ImportError:
+        pip_version = None
+
+    # ffmpeg / magick — try CLI arg, then PATH, then interactive prompt
+    ffmpeg_bin = args.ffmpeg_bin if hasattr(args, 'ffmpeg_bin') else None
+    magick_bin = args.magick_bin if hasattr(args, 'magick_bin') else None
+    ffmpeg_path = _check_binary("ffmpeg", ffmpeg_bin)
+    magick_path = _check_binary("magick", magick_bin) or _check_binary("convert", magick_bin)
+
+    if not args.non_interactive:
+        if not ffmpeg_path:
+            ans = input("  ffmpeg not found. Enter path (or Enter to skip): ").strip()
+            if ans:
+                ffmpeg_path = _check_binary(ans) or (ans if os.path.isfile(ans) else None)
+        if not magick_path:
+            ans = input("  magick/convert not found. Enter path (or Enter to skip): ").strip()
+            if ans:
+                magick_path = _check_binary(ans) or (ans if os.path.isfile(ans) else None)
+
+    env = {
         "fixtures_dir": fixtures_dir,
-        "server_url": server_url,
+        "server_url": server_ok,
         "has_pil": has_pil,
+        "comfyui_root": comfyui_root,
+        "ffmpeg_path": ffmpeg_path,
+        "magick_path": magick_path,
+        "python_version": python_version,
+        "pip_version": pip_version,
     }
+
+    # Print banner
+    print(f"\n{'='*60}")
+    print("  Environment")
+    print(f"{'='*60}")
+
+    def _status(ok, detail=None):
+        if ok:
+            return f"✅ {detail}" if detail else "✅"
+        return "❌ not found"
+
+    print(f"  Python         ✅ {python_version}")
+    print(f"  pip            {_status(pip_version, pip_version)}")
+    print(f"  PIL/Pillow     {_status(has_pil, 'available')}")
+    print(f"  ComfyUI server {_status(server_ok, server_ok)}")
+    print(f"  ComfyUI modules{' ' if not comfyui_root else ''}{_status(comfyui_root, comfyui_root)}")
+    print(f"  ffmpeg         {_status(ffmpeg_path, ffmpeg_path)}")
+    print(f"  magick         {_status(magick_path, magick_path)}")
+    if fixtures_dir:
+        print(f"  Fixtures       ✅ {fixtures_dir}")
+    else:
+        print(f"  Fixtures       ⏭️  none")
+    print()
+
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -160,21 +272,40 @@ def main() -> int:
     parser.add_argument("--no-browser", action="store_true",
                         help="Don't open report in browser")
     parser.add_argument("--stage", type=int, nargs="*", default=None,
-                        help="Run only specific stage number(s)")
+                        help="(Legacy) Run only specific stage number(s)")
+    parser.add_argument("--phase", type=int, nargs="*", default=None,
+                        help="Run only specific phase number(s)")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Use legacy stage_*.py files instead of phase_*.py")
+    parser.add_argument("--node-info", type=str, default=None,
+                        help="Path to node-info.json (overrides all other sources)")
+    parser.add_argument("--docs", action="store_true",
+                        help="Include Phase 8 docs tests")
+    parser.add_argument("--ffmpeg-bin", type=str, default=None,
+                        help="Path to ffmpeg binary (default: auto-detect)")
+    parser.add_argument("--magick-bin", type=str, default=None,
+                        help="Path to ImageMagick binary (default: auto-detect magick/convert)")
     parser.add_argument("--list", action="store_true",
-                        help="List all discovered stages and exit")
+                        help="List all discovered modules and exit")
     args = parser.parse_args()
 
-    # --- Discover stages ---
-    all_stages = _discover_stages()
+    # --- Determine mode: phases (default) vs legacy stages ---
+    use_legacy = args.legacy or (args.stage is not None)
+
+    if use_legacy:
+        all_modules = _discover_stages()
+        mode_label = "Stage"
+    else:
+        all_modules = _discover_phases()
+        mode_label = "Phase"
 
     if args.list:
         print(f"\n{'='*60}")
-        print("  Discovered Stage Modules")
+        print(f"  Discovered {mode_label} Modules")
         print(f"{'='*60}\n")
-        for num, mod_name, mod in all_stages:
-            stage_label = getattr(mod, "STAGE", mod_name)
-            print(f"  {num:3d}  {stage_label}")
+        for num, mod_name, mod in all_modules:
+            label = getattr(mod, "STAGE", mod_name)
+            print(f"  {num:3d}  {label}")
         print()
         return 0
 
@@ -192,46 +323,59 @@ def main() -> int:
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Resolve prompted args ---
-    prompted = _resolve_prompted_kwargs(args)
+    # --- Detect environment ---
+    env = detect_environment(args)
 
-    # Build kwargs passed to every stage
+    # Build kwargs passed to every stage/phase
     stage_kwargs: Dict[str, Any] = {
         "output_dir": output_dir,
-        **prompted,
+        "docs": args.docs,
+        **env,
     }
 
-    # --- Filter stages ---
-    if args.stage is not None:
-        stage_set = set(args.stage)
-        run_stages = [(n, m, mod) for n, m, mod in all_stages if n in stage_set]
-        if not run_stages:
-            print(f"  ⚠️  No stages matched: {args.stage}")
+    # If --node-info provided, load it and inject into kwargs
+    if args.node_info:
+        import json as _json
+        ni_path = Path(args.node_info).resolve()
+        if not ni_path.is_file():
+            print(f"  ❌ --node-info file not found: {ni_path}")
+            return 1
+        with open(ni_path, "r", encoding="utf-8") as _fh:
+            stage_kwargs["node_info_override"] = _json.load(_fh)
+        print(f"  📄 Node-info override: {ni_path}")
+
+    # --- Filter modules ---
+    filter_nums = args.stage if use_legacy else args.phase
+    if filter_nums is not None:
+        num_set = set(filter_nums)
+        run_modules = [(n, m, mod) for n, m, mod in all_modules if n in num_set]
+        if not run_modules:
+            print(f"  ⚠️  No {mode_label.lower()}s matched: {filter_nums}")
             return 1
     else:
-        run_stages = all_stages
+        run_modules = all_modules
 
-    # --- Run stages ---
+    # --- Run ---
     collector = ResultCollector()
 
     print(f"\n{'='*60}")
     print("  autoflow — Modular Test Suite")
     print(f"{'='*60}")
-    print(f"  Running {len(run_stages)} stage(s)...\n")
+    print(f"  Running {len(run_modules)} {mode_label.lower()}(s)...\n")
 
     t0 = time.monotonic()
-    for num, mod_name, mod in run_stages:
+    for num, mod_name, mod in run_modules:
         try:
             ret = mod.run(collector, **stage_kwargs)
             # Stage 5 returns discovered fixtures — pass them to later stages
             if isinstance(ret, list) and ret:
                 stage_kwargs["fixtures"] = ret
         except Exception as exc:
-            # If a stage itself blows up, record a single ERROR for it.
+            # If a module itself blows up, record a single ERROR for it.
             from harness import _run_test
-            stage_label = getattr(mod, "STAGE", mod_name)
-            _run_test(collector, stage_label, f"{num}.0",
-                      f"Stage {num} module load/run",
+            mod_label = getattr(mod, "STAGE", mod_name)
+            _run_test(collector, mod_label, f"{num}.0",
+                      f"{mode_label} {num} module load/run",
                       lambda: (_ for _ in ()).throw(exc))
     elapsed = time.monotonic() - t0
 
@@ -264,12 +408,22 @@ def main() -> int:
     # --- HTML report ---
     # Prefer fixtures from stage runs (they have generated_images/progress_log),
     # fall back to fresh discovery for ground-truth-only display.
-    fixtures = stage_kwargs.get("fixtures") or discover_fixtures(prompted.get("fixtures_dir", "") or "")
+    fixtures = stage_kwargs.get("fixtures") or discover_fixtures(env.get("fixtures_dir", "") or "")
+    # Ensure ground-truth images are copied into the output directory so the
+    # HTML report can reference them via relative paths.
+    if fixtures:
+        for fx in fixtures:
+            copy_ground_truth(fx, output_dir)
     report_path = str(output_dir / "index.html")
     run_config = {
-        "server_url": prompted.get("server_url"),
-        "fixtures_dir": prompted.get("fixtures_dir"),
-        "has_pil": prompted.get("has_pil"),
+        "python_version": env.get("python_version"),
+        "pip_version": env.get("pip_version"),
+        "has_pil": env.get("has_pil"),
+        "server_url": env.get("server_url"),
+        "comfyui_root": env.get("comfyui_root"),
+        "ffmpeg_path": env.get("ffmpeg_path"),
+        "magick_path": env.get("magick_path"),
+        "fixtures_dir": env.get("fixtures_dir"),
         "output_dir": str(output_dir),
     }
     generate_html_report(collector, report_path, fixtures=fixtures or None,

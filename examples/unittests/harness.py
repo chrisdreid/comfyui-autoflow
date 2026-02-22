@@ -475,28 +475,63 @@ def _print_stage_summary(collector: ResultCollector, stage: str) -> None:
 # ---------------------------------------------------------------------------
 # HTML report generator
 # ---------------------------------------------------------------------------
-def _build_run_config_html(run_config: Optional[Dict[str, Any]]) -> str:
-    """Build an HTML block showing the run configuration."""
+def _build_run_config_html(run_config: Optional[Dict[str, Any]],
+                           version: str = "", python_ver: str = "",
+                           platform: str = "", date_str: str = "",
+                           total: int = 0) -> str:
+    """Build a collapsible environment details panel.
+
+    The summary bar shows version / python / OS / date / total.
+    Clicking expands a vertical grid of all detected environment fields.
+    """
+    # Summary bar items
+    summary_parts = []
+    if version:
+        summary_parts.append(f"<strong>Version:</strong> {html_mod.escape(version)}")
+    if python_ver:
+        summary_parts.append(f"<strong>Python:</strong> {html_mod.escape(python_ver)}")
+    if platform:
+        summary_parts.append(f"<strong>OS:</strong> {html_mod.escape(platform)}")
+    if date_str:
+        summary_parts.append(f"<strong>Date:</strong> {html_mod.escape(date_str)}")
+    summary_parts.append(f"<strong>Total:</strong> {total} tests")
+    summary_html = " &nbsp;|&nbsp; ".join(summary_parts)
+
+    # Detail rows
     if not run_config:
-        return ""
-    items = []
-    labels = {
-        "server_url": "🌐 Server",
-        "fixtures_dir": "📁 Fixtures",
-        "has_pil": "🖼️ PIL",
-        "output_dir": "📂 Output",
-    }
-    for key in ("server_url", "fixtures_dir", "has_pil", "output_dir"):
+        return f'<details class="env-panel"><summary class="env-summary">{summary_html}</summary></details>\n'
+
+    labels = [
+        ("python_version", "🐍 Python"),
+        ("pip_version",    "📦 pip"),
+        ("has_pil",        "🖼️ PIL/Pillow"),
+        ("server_url",     "🌐 ComfyUI Server"),
+        ("comfyui_root",   "🖥️ ComfyUI Modules"),
+        ("ffmpeg_path",    "🎬 ffmpeg"),
+        ("magick_path",    "🪄 magick"),
+        ("fixtures_dir",   "📁 Fixtures"),
+        ("output_dir",     "📂 Output"),
+    ]
+    rows = ""
+    for key, label in labels:
         val = run_config.get(key)
         if val is None:
-            display = '<span style="color:#f85149">not set</span>'
+            display = '<span class="env-val env-missing">not set</span>'
         elif isinstance(val, bool):
-            display = '<span style="color:#3fb950">✓ available</span>' if val else '<span style="color:#f85149">✗ unavailable</span>'
+            if val:
+                display = '<span class="env-val env-ok">✓ available</span>'
+            else:
+                display = '<span class="env-val env-missing">✗ unavailable</span>'
         else:
-            display = html_mod.escape(str(val))
-        label = labels.get(key, key)
-        items.append(f"<strong>{label}:</strong> {display}")
-    return f'<p class="env-info">{" &nbsp;|&nbsp; ".join(items)}</p>\n'
+            display = f'<span class="env-val env-ok">{html_mod.escape(str(val))}</span>'
+        rows += f'<div class="env-row"><span class="env-key">{label}</span>{display}</div>\n'
+
+    return f"""<details class="env-panel">
+<summary class="env-summary">{summary_html}</summary>
+<div class="env-grid">
+{rows}</div>
+</details>
+"""
 
 
 def generate_html_report(collector: ResultCollector, output_path: str,
@@ -542,7 +577,10 @@ def generate_html_report(collector: ResultCollector, output_path: str,
             result_val = cat.get("result", "")
             code = cat.get("code", "")
 
-            has_detail = bool(desc or inputs or outputs or result_val or code or msg_html)
+            preview = cat.get("preview", "")
+            preview_type = cat.get("preview_type", "")  # "mermaid", "dot", or ""
+
+            has_detail = bool(desc or inputs or outputs or result_val or code or msg_html or preview)
             clickable = ' class="expandable" onclick="toggleDetail(this)"' if has_detail else ''
 
             # Tooltip text
@@ -571,6 +609,14 @@ def generate_html_report(collector: ResultCollector, output_path: str,
                         io_html += f'<div class="io-box"><span class="io-label io-result">RESULT</span> {html_mod.escape(str(result_val))}</div>'
                     io_html += '</div>'
                     detail_parts.append(io_html)
+                if preview:
+                    escaped = html_mod.escape(preview)
+                    if preview_type == "mermaid":
+                        detail_parts.append(
+                            f'<div class="detail-preview"><div class="mermaid">{escaped}</div></div>')
+                    else:
+                        detail_parts.append(
+                            f'<div class="detail-code"><pre>{escaped}</pre></div>')
                 if code:
                     detail_parts.append(f'<div class="detail-code"><pre>{html_mod.escape(code)}</pre></div>')
                 if msg_html and r.status != "PASS":
@@ -700,6 +746,25 @@ def generate_html_report(collector: ResultCollector, output_path: str,
   .env-info {{ color: #8b949e; font-size: 0.9em; margin-bottom: 1rem; }}
   .env-info strong {{ color: #c9d1d9; }}
 
+  /* Collapsible env panel */
+  .env-panel {{ margin-bottom: 1rem; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }}
+  .env-summary {{ padding: 0.75rem 1rem; background: #161b22; cursor: pointer; color: #8b949e; font-size: 0.9em; user-select: none; display: flex; align-items: center; gap: 0.5rem; list-style: none; }}
+  .env-summary::-webkit-details-marker {{ display: none; }}
+  .env-summary::before {{ content: '▶'; font-size: 0.7em; color: #484f58; transition: transform 0.2s; display: inline-block; }}
+  .env-panel[open] .env-summary::before {{ transform: rotate(90deg); }}
+  .env-summary strong {{ color: #c9d1d9; }}
+  .env-summary:hover {{ background: #1c2128; }}
+  .env-grid {{ display: flex; flex-direction: column; padding: 0; background: #0d1117; }}
+  .env-row {{ display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1.25rem; border-top: 1px solid #21262d; font-size: 0.88em; }}
+  .env-key {{ color: #8b949e; min-width: 150px; }}
+  .env-val {{ font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.9em; }}
+  .env-ok {{ color: #3fb950; }}
+  .env-missing {{ color: #f85149; }}
+
+  /* Preview (mermaid, dot) */
+  .detail-preview {{ background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 0.5rem; overflow-x: auto; }}
+  .detail-preview .mermaid {{ background: transparent; }}
+
   /* Stage sections */
   .stage-section {{ margin-bottom: 1rem; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }}
   .stage-header {{ background: #161b22; margin: 0; padding: 0.75rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; user-select: none; font-size: 1em; }}
@@ -773,14 +838,12 @@ def generate_html_report(collector: ResultCollector, output_path: str,
 <body>
 <h1>🧪 autoflow Test Dashboard</h1>
 <div class="overall">{'🎉 ALL TESTS PASSED' if collector.all_passed else '⚠️ SOME TESTS FAILED'}</div>
-<p class="env-info">
-<strong>Version:</strong> {html_mod.escape(autoflow.__version__)} &nbsp;|&nbsp;
-<strong>Python:</strong> {html_mod.escape(sys.version.split()[0])} &nbsp;|&nbsp;
-<strong>OS:</strong> {html_mod.escape(sys.platform)} &nbsp;|&nbsp;
-<strong>Date:</strong> {now} &nbsp;|&nbsp;
-<strong>Total:</strong> {total} tests
-</p>
-{_build_run_config_html(run_config)}
+{_build_run_config_html(run_config,
+    version=autoflow.__version__,
+    python_ver=sys.version.split()[0],
+    platform=sys.platform,
+    date_str=now,
+    total=total)}
 
 <div class="summary">
   <div class="stat pass"><div class="stat-value">{passed}</div><div class="stat-label">Passed</div></div>
@@ -843,6 +906,8 @@ document.querySelectorAll('.expandable').forEach(row => {{
   }}
 }});
 </script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({{ startOnLoad: true, theme: 'dark' }});</script>
 
 <p style="color:#484f58;margin-top:2rem;font-size:0.85em;">Generated by autoflow test suite — click any test row for details</p>
 </body>
