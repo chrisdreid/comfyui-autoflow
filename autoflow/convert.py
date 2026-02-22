@@ -1239,6 +1239,12 @@ def workflow_to_api_format_with_errors(
         class_type = node.get("type", "unknown")
 
         try:
+            # Skip muted (mode=2) and bypassed (mode=4) nodes — matches ComfyUI behavior.
+            node_mode = node.get("mode", 0)
+            if node_mode in (2, 4):
+                skipped_nodes += 1
+                continue
+
             # Node inclusion is driven by node_info (schema), not hardcoded node names.
             # If node_info is present, any node type not in node_info is skipped (UI-only, unknown, etc).
             if isinstance(node_info, dict) and node_info and class_type not in node_info:

@@ -7,7 +7,7 @@ ComfyUI
 ██╔══██║██║   ██║   ██║   ██║   ██║██╔══╝  ██║     ██║   ██║██║███╗██║
 ██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║     ███████╗╚██████╔╝╚███╔███╔╝
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ 
-                                                       version: 1.3.1
+                                                       version: 1.3.2
 ```
 
 ```mermaid
@@ -311,10 +311,26 @@ This script is designed to be production-ready and maintainable. Key design prin
 
 ### Running tests (offline)
 
-#### Unit tests
+#### Master test suite (recommended)
 
 ```bash
-# Run the full unittest suite (offline)
+# Run the full 154-test suite with HTML report (offline, no server needed)
+python examples/unittests/main.py --non-interactive --no-browser
+
+# Run a specific stage only
+python examples/unittests/main.py --stage 8 --non-interactive --no-browser
+```
+
+What to expect:
+- **154 tests** across 15 stages: conversion, node access, widgets, bypass, fixtures, and more
+- **HTML report** generated at `autoflow-test-suite/outputs/index.html`
+- **Exit code**: `0` on success, non-zero on failure
+- Stages 5 (fixtures) and 6 (server) are skipped unless `--fixtures-dir` / `--server-url` are provided
+
+#### Legacy unit tests
+
+```bash
+# Run unittest discovery (subset of tests)
 python -m unittest discover -s examples/unittests -v
 ```
 

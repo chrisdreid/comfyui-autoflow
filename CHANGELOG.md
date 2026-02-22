@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-02-21
+
+### Added
+- `FlowNodeProxy.bypass` / `NodeRef.bypass` property — `node.bypass = True` sets LiteGraph mode 4 (bypassed), `False` resets to mode 0 (normal)
+- Converter skips bypassed nodes (mode 2 = muted, mode 4 = bypassed) during workspace → API conversion, matching ComfyUI GUI behavior
+- Comprehensive offline test suite: **154 tests** across 15 stages covering `Flow`, `FlowNodeProxy`/`NodeRef`, `NodeSet`/`FlowNodeGroup`, `WidgetValue`, `ApiFlow`+`NodeProxy`, `NodeInfo`, `DictView`/`ListView`, and `Workflow` factory
+- `bypass_types` fixture support for controlling which node types get bypassed in test submissions
+
+### Changed
+- Bumped version from 1.3.1 to 1.3.2
+- Test suite uses capability-based assertions (`MutableMapping`, `hasattr`) for resilience across model layers
+
+---
+
+## [1.3.1] - 2026-02-20
+
+### Fixed
+- `api_mapping()` now uses `flow.unwrap()` (returns underlying legacy dict) before `deepcopy`, fixing a regression where the flowtree `Flow` wrapper was being deepcopied incorrectly
+- Metadata passthrough during `Flow.convert()` preserved correctly
+
+### Changed
+- Bumped version from 1.3.0 to 1.3.1
+
+---
+
 ## [1.3.0] - 2026-02-20
 
 ### Added
