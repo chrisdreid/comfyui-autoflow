@@ -1187,7 +1187,19 @@ def stage_6(collector: ResultCollector, server_url: Optional[str],
                 if ni.exists():
                     with open(ni, "r", encoding="utf-8") as fh:
                         ni_data = json.load(fh)
-                api = Workflow(str(wf), node_info=ni_data) if ni_data else Workflow(str(wf), server_url=server_url)
+
+                # Load workflow JSON as dict so we can apply bypass_types
+                with open(wf, "r", encoding="utf-8") as fh:
+                    wf_data = json.load(fh)
+
+                # Bypass node types specified in fixture manifest
+                bypass_types = set(fixture.manifest.get("bypass_types", []))
+                if bypass_types and isinstance(wf_data.get("nodes"), list):
+                    for node in wf_data["nodes"]:
+                        if isinstance(node, dict) and node.get("type") in bypass_types:
+                            node["mode"] = 4  # LiteGraph bypassed
+
+                api = Workflow(wf_data, node_info=ni_data) if ni_data else Workflow(wf_data, server_url=server_url)
 
                 # Apply only edits from manifest (e.g. filename_prefix)
                 edits = fixture.manifest.get("edits", {})

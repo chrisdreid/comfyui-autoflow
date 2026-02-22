@@ -801,6 +801,16 @@ class FlowNodeProxy(_DictMixin):
     def node(self) -> Dict[str, Any]:
         return self._get_data()
 
+    @property
+    def bypass(self) -> bool:
+        """True when the node is bypassed (LiteGraph mode 4)."""
+        return self._get_data().get("mode", 0) == 4
+
+    @bypass.setter
+    def bypass(self, value: bool) -> None:
+        """Set bypass state: True → mode 4 (bypassed), False → mode 0 (normal)."""
+        self._get_data()["mode"] = 4 if value else 0
+
     def __getattr__(self, name: str) -> Any:
         node = self._get_data()
         parent = object.__getattribute__(self, "_parent")
