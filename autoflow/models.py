@@ -896,6 +896,13 @@ class FlowNodeProxy(_DictMixin):
             object.__setattr__(self, name, value)
             return
 
+        # Route property descriptors (e.g. bypass) through the normal
+        # descriptor protocol so the @bypass.setter fires.
+        prop = getattr(type(self), name, None)
+        if isinstance(prop, property) and prop.fset is not None:
+            prop.fset(self, value)
+            return
+
         node = self._get_data()
         parent = object.__getattribute__(self, "_parent")
         node_info = getattr(parent, "node_info", None)
