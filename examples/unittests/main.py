@@ -1354,6 +1354,915 @@ def stage_7(collector: ResultCollector, has_pil: bool,
 
 
 # ===================================================================
+# STAGE 8 — Flow Object: Core API
+# ===================================================================
+def stage_8(collector: ResultCollector) -> None:
+    stage = "Stage 8: Flow Core API"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from collections.abc import MutableMapping
+    from autoflow import Flow, NodeInfo
+
+    wf_path = str(_BUNDLED_WORKFLOW)
+
+    # 8.1 Flow(path) constructor (not .load())
+    def t_8_1():
+        f = Flow(wf_path)
+        assert f is not None, "Flow(path) returned None"
+        assert isinstance(f, MutableMapping), "Flow should be a MutableMapping"
+    _run_test(collector, stage, "8.1", "Flow(path) constructor", t_8_1)
+
+    # 8.2 flow.source property
+    def t_8_2():
+        f = Flow(wf_path)
+        s = f.source
+        assert isinstance(s, str), f"source is not str: {type(s)}"
+        assert len(s) > 0, "source is empty"
+    _run_test(collector, stage, "8.2", "flow.source property", t_8_2)
+
+    # 8.3 flow.links property
+    def t_8_3():
+        f = Flow(wf_path)
+        links = f.links
+        assert links is not None, "flow.links is None"
+        # links should be list-like
+        assert hasattr(links, '__len__'), "links has no __len__"
+        assert len(links) > 0, "links is empty"
+    _run_test(collector, stage, "8.3", "flow.links property", t_8_3)
+
+    # 8.4 flow.extra returns accessible object
+    def t_8_4():
+        f = Flow(wf_path)
+        extra = f.extra
+        assert extra is not None, "flow.extra is None"
+        # extra should have ds.scale from standard workflow
+        ds = extra.ds
+        assert ds is not None, "extra.ds is None"
+    _run_test(collector, stage, "8.4", "flow.extra returns DictView", t_8_4)
+
+    # 8.5 flow.nodes returns iterable view with len()
+    def t_8_5():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        nodes = f.nodes
+        assert hasattr(nodes, '__len__'), "nodes has no __len__"
+        assert hasattr(nodes, '__iter__'), "nodes has no __iter__"
+    _run_test(collector, stage, "8.5", "flow.nodes is iterable with len", t_8_5)
+
+    # 8.6 flow.nodes.KSampler returns node accessor
+    def t_8_6():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        ks = f.nodes.KSampler
+        assert ks is not None, "flow.nodes.KSampler is None"
+        # Should be indexable and have len
+        assert hasattr(ks, '__len__'), f"KSampler result has no __len__: {type(ks)}"
+        assert len(ks) >= 1, "KSampler should have at least 1 instance"
+    _run_test(collector, stage, "8.6", "flow.nodes.KSampler → FlowNodeProxy", t_8_6)
+
+    # 8.7 flow.nodes.CLIPTextEncode returns multi-instance accessor
+    def t_8_7():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        clips = f.nodes.CLIPTextEncode
+        assert clips is not None, "flow.nodes.CLIPTextEncode is None"
+        assert hasattr(clips, '__len__'), f"CLIPTextEncode has no __len__: {type(clips)}"
+        assert len(clips) == 2, f"Expected 2 CLIPTextEncode, got {len(clips)}"
+    _run_test(collector, stage, "8.7", "flow.nodes.CLIPTextEncode → FlowNodeGroup", t_8_7)
+
+    # 8.8 len(flow.nodes)
+    def t_8_8():
+        f = Flow(wf_path)
+        n = len(f.nodes)
+        assert isinstance(n, int), f"len(nodes) is {type(n)}"
+        assert n > 0, "len(nodes) is 0"
+    _run_test(collector, stage, "8.8", "len(flow.nodes)", t_8_8)
+
+    # 8.9 iter(flow.nodes) yields items
+    def t_8_9():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        items = list(f.nodes)
+        assert len(items) > 0, "iter(nodes) yielded nothing"
+        # iter yields string keys (node labels) in flowtree model layer
+        assert isinstance(items[0], str), f"iter yielded {type(items[0])}"
+    _run_test(collector, stage, "8.9", "iter(flow.nodes) yields items", t_8_9)
+
+    # 8.10 flow.nodes.keys() / values() / items()
+    def t_8_10():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        k = f.nodes.keys()
+        v = f.nodes.values()
+        it = f.nodes.items()
+        assert len(list(k)) > 0, "keys() empty"
+        assert len(list(v)) > 0, "values() empty"
+        assert len(list(it)) > 0, "items() empty"
+    _run_test(collector, stage, "8.10", "flow.nodes.keys()/values()/items()", t_8_10)
+
+    # 8.11 flow.nodes.to_list() / to_dict()
+    def t_8_11():
+        f = Flow(wf_path)
+        lst = f.nodes.to_list()
+        dct = f.nodes.to_dict()
+        assert isinstance(lst, list), f"to_list() returned {type(lst)}"
+        assert isinstance(dct, dict), f"to_dict() returned {type(dct)}"
+        assert len(lst) > 0, "to_list() empty"
+    _run_test(collector, stage, "8.11", "flow.nodes.to_list()/to_dict()", t_8_11)
+
+    # 8.12 flow.convert(node_info=...) returns ApiFlow
+    def t_8_12():
+        from autoflow import ApiFlow
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        api = f.convert(node_info=BUILTIN_NODE_INFO)
+        assert isinstance(api, ApiFlow), f"convert() returned {type(api)}"
+        assert len(api) > 0, "Converted ApiFlow is empty"
+    _run_test(collector, stage, "8.12", "flow.convert() → ApiFlow", t_8_12)
+
+    # 8.13 flow.convert_with_errors(node_info=...)
+    def t_8_13():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        result = f.convert_with_errors(node_info=BUILTIN_NODE_INFO)
+        assert result is not None, "convert_with_errors returned None"
+        assert hasattr(result, "ok"), "No .ok on result"
+        assert result.ok, f"Conversion failed: {getattr(result, 'errors', '?')}"
+        assert result.data is not None, "result.data is None"
+    _run_test(collector, stage, "8.13", "flow.convert_with_errors()", t_8_13)
+
+    # 8.14 flow.dag returns Dag
+    def t_8_14():
+        f = Flow(wf_path)
+        dag = f.dag
+        assert dag is not None, "flow.dag is None"
+        assert isinstance(dag, dict), f"dag is {type(dag)}, expected dict subclass"
+    _run_test(collector, stage, "8.14", "flow.dag returns Dag", t_8_14)
+
+    # 8.15 Flow(path, node_info=dict) stores node_info
+    def t_8_15():
+        f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        ni = f.node_info
+        assert ni is not None, "flow.node_info is None after passing node_info="
+    _run_test(collector, stage, "8.15", "Flow(path, node_info=dict) stores node_info", t_8_15)
+
+    # 8.16 flow.fetch_node_info(dict)
+    def t_8_16():
+        f = Flow(wf_path)
+        f.fetch_node_info(BUILTIN_NODE_INFO)
+        assert f.node_info is not None, "node_info still None after fetch_node_info(dict)"
+    _run_test(collector, stage, "8.16", "flow.fetch_node_info(dict)", t_8_16)
+
+    # 8.17 Round-trip: Flow(flow.to_json())
+    def t_8_17():
+        f = Flow(wf_path)
+        j = f.to_json()
+        f2 = Flow(j)
+        assert len(f2.nodes) == len(f.nodes), "Node count mismatch after round-trip"
+    _run_test(collector, stage, "8.17", "Round-trip: Flow(flow.to_json())", t_8_17)
+
+    # 8.18 Flow constructor from dict
+    def t_8_18():
+        with open(wf_path, "r") as fh:
+            d = json.load(fh)
+        f = Flow(d)
+        assert len(f.nodes) > 0, "Flow from dict has no nodes"
+    _run_test(collector, stage, "8.18", "Flow(dict) constructor", t_8_18)
+
+    # 8.19 Flow constructor from bytes
+    def t_8_19():
+        with open(wf_path, "rb") as fh:
+            b = fh.read()
+        f = Flow(b)
+        assert len(f.nodes) > 0, "Flow from bytes has no nodes"
+    _run_test(collector, stage, "8.19", "Flow(bytes) constructor", t_8_19)
+
+    # 8.20 flow.save() + reload
+    def t_8_20():
+        f = Flow(wf_path)
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            f.save(tmp_path)
+            f2 = Flow(tmp_path)
+            assert len(f2.nodes) == len(f.nodes), "Node count mismatch after save→reload"
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    _run_test(collector, stage, "8.20", "flow.save() → reload", t_8_20)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 9 — FlowNodeProxy: Node-Level API
+# ===================================================================
+def stage_9(collector: ResultCollector) -> None:
+    stage = "Stage 9: FlowNodeProxy"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow import Flow
+
+    wf_path = str(_BUNDLED_WORKFLOW)
+    f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+    ks = f.nodes.KSampler[0]  # Get first (only) node ref
+
+    # 9.1 .id returns int
+    def t_9_1():
+        nid = ks.id
+        assert isinstance(nid, int), f"id is {type(nid)}, expected int"
+    _run_test(collector, stage, "9.1", ".id returns int", t_9_1)
+
+    # 9.2 .type returns str
+    def t_9_2():
+        t = ks.type
+        assert t == "KSampler", f"type is {t!r}, expected 'KSampler'"
+    _run_test(collector, stage, "9.2", ".type returns 'KSampler'", t_9_2)
+
+    # 9.3 .widgets_values returns list
+    def t_9_3():
+        wv = ks.widgets_values
+        assert isinstance(wv, (list, type(None))), f"widgets_values is {type(wv)}"
+        if wv is not None:
+            assert len(wv) > 0, "widgets_values is empty"
+    _run_test(collector, stage, "9.3", ".widgets_values returns list", t_9_3)
+
+    # 9.4 .node returns raw dict
+    def t_9_4():
+        n = ks.node
+        assert isinstance(n, dict), f"node is {type(n)}, expected dict"
+        assert "type" in n, "'type' key missing from node dict"
+    _run_test(collector, stage, "9.4", ".node returns raw dict", t_9_4)
+
+    # 9.5 .bypass get (False by default)
+    def t_9_5():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        node = f2.nodes.KSampler
+        assert node.bypass is False, f"bypass should be False, got {node.bypass}"
+    _run_test(collector, stage, "9.5", ".bypass is False by default", t_9_5)
+
+    # 9.6 .bypass = True sets mode=4
+    def t_9_6():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        node = f2.nodes.KSampler
+        node.bypass = True
+        assert node.bypass is True, f"bypass should be True after set, got {node.bypass}"
+        assert node.node.get("mode") == 4, f"mode should be 4, got {node.node.get('mode')}"
+    _run_test(collector, stage, "9.6", ".bypass = True → mode=4", t_9_6)
+
+    # 9.7 .bypass = False restores mode=0
+    def t_9_7():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        node = f2.nodes.KSampler
+        node.bypass = True
+        node.bypass = False
+        assert node.bypass is False, f"bypass should be False after clear"
+        assert node.node.get("mode") == 0, f"mode should be 0, got {node.node.get('mode')}"
+    _run_test(collector, stage, "9.7", ".bypass = False → mode=0", t_9_7)
+
+    # 9.8 __repr__ format
+    def t_9_8():
+        r = repr(ks)
+        assert "KSampler" in r, f"repr missing 'KSampler': {r}"
+    _run_test(collector, stage, "9.8", "__repr__ format", t_9_8)
+
+    # 9.9 .attrs() returns widget names (with node_info)
+    def t_9_9():
+        a = ks.attrs()
+        assert isinstance(a, list), f"attrs() returned {type(a)}"
+        assert "seed" in a, f"'seed' not in attrs(): {a}"
+        assert "steps" in a, f"'steps' not in attrs(): {a}"
+        assert "cfg" in a, f"'cfg' not in attrs(): {a}"
+    _run_test(collector, stage, "9.9", ".attrs() returns widget names", t_9_9)
+
+    # 9.10 dir(node) includes widget names
+    def t_9_10():
+        d = dir(ks)
+        assert "seed" in d, f"'seed' not in dir(node)"
+        assert "steps" in d, f"'steps' not in dir(node)"
+    _run_test(collector, stage, "9.10", "dir(node) includes widgets", t_9_10)
+
+    # 9.11 Dot-read widget returns value
+    def t_9_11():
+        seed = ks.seed
+        # In flowtree layer, WidgetValue or raw value — either way, should be usable as int
+        assert int(seed) == int(seed), f"seed is not numeric: {seed}"
+    _run_test(collector, stage, "9.11", "Dot-read widget → WidgetValue", t_9_11)
+
+    # 9.12 Dot-write widget
+    def t_9_12():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        node = f2.nodes.KSampler[0]
+        node.seed = 42
+        val = node.seed
+        actual = int(val) if hasattr(val, '__int__') else val
+        assert actual == 42, f"seed set to 42 but got {actual}"
+    _run_test(collector, stage, "9.12", "Dot-write: node.seed = 42", t_9_12)
+
+    # 9.13 Widget write round-trip (set → read → matches)
+    def t_9_13():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        node = f2.nodes.KSampler[0]
+        node.steps = 100
+        node.cfg = 12.5
+        assert int(node.steps) == 100, f"steps mismatch: {node.steps}"
+        assert float(node.cfg) == 12.5, f"cfg mismatch: {node.cfg}"
+    _run_test(collector, stage, "9.13", "Widget write round-trip", t_9_13)
+
+    # 9.14 .type attribute access
+    def t_9_14():
+        val = ks.type
+        assert val == "KSampler", f"node.type = {val!r}"
+    _run_test(collector, stage, "9.14", ".type attribute access", t_9_14)
+
+    # 9.15 .path() and .address() on proxy
+    def t_9_15():
+        p = ks.path()
+        assert isinstance(p, str) and len(p) > 0, f"path() = {p!r}"
+        a = ks.address()
+        assert isinstance(a, str) and len(a) > 0, f"address() = {a!r}"
+    _run_test(collector, stage, "9.15", ".path() and .address()", t_9_15)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 10 — FlowNodeGroup: Multi-Instance Nodes
+# ===================================================================
+def stage_10(collector: ResultCollector) -> None:
+    stage = "Stage 10: FlowNodeGroup"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow import Flow
+
+    wf_path = str(_BUNDLED_WORKFLOW)
+    f = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+    clips = f.nodes.CLIPTextEncode  # 2 instances in bundled workflow
+
+    # 10.1 len(group)
+    def t_10_1():
+        assert hasattr(clips, '__len__'), f"No __len__ on {type(clips)}"
+        assert len(clips) == 2, f"Expected 2 CLIPTextEncode, got {len(clips)}"
+    _run_test(collector, stage, "10.1", "len(group) == 2", t_10_1)
+
+    # 10.2 group[0], group[1] return node refs
+    def t_10_2():
+        c0 = clips[0]
+        c1 = clips[1]
+        assert hasattr(c0, 'type'), f"clips[0] has no .type: {type(c0)}"
+        assert hasattr(c1, 'type'), f"clips[1] has no .type: {type(c1)}"
+        # They should be different nodes
+        assert c0.id != c1.id, f"clips[0].id == clips[1].id == {c0.id}"
+    _run_test(collector, stage, "10.2", "group[0]/[1] → FlowNodeProxy", t_10_2)
+
+    # 10.3 iter(group) yields node refs
+    def t_10_3():
+        refs = list(clips)
+        assert len(refs) == 2, f"iter yielded {len(refs)} items"
+        for r in refs:
+            assert hasattr(r, 'type'), f"iter yielded {type(r)} without .type"
+    _run_test(collector, stage, "10.3", "iter(group) yields node refs", t_10_3)
+
+    # 10.4 Broadcast read: group.text
+    def t_10_4():
+        val = clips.text
+        # Should read from first node
+        assert val is not None, "group.text is None"
+    _run_test(collector, stage, "10.4", "Broadcast read: group.text", t_10_4)
+
+    # 10.5 Broadcast write: group[0].text = "new" (individual set)
+    def t_10_5():
+        f2 = Flow(wf_path, node_info=BUILTIN_NODE_INFO)
+        clips2 = f2.nodes.CLIPTextEncode
+        # Set on individual element
+        clips2[0].text = "test text"
+        actual = str(clips2[0].text)
+        assert actual == "test text", f"Expected 'test text', got {actual!r}"
+    _run_test(collector, stage, "10.5", "Individual write: group[0].text = 'new'", t_10_5)
+
+    # 10.6 group.attrs()
+    def t_10_6():
+        a = clips.attrs()
+        assert isinstance(a, list), f"attrs() returned {type(a)}"
+        assert "text" in a, f"'text' not in attrs(): {a}"
+    _run_test(collector, stage, "10.6", "group.attrs()", t_10_6)
+
+    # 10.7 dir(group) includes widget names
+    def t_10_7():
+        d = dir(clips)
+        assert "text" in d, f"'text' not in dir(group)"
+    _run_test(collector, stage, "10.7", "dir(group) includes widgets", t_10_7)
+
+    # 10.8 group.keys() / values() / items()
+    def t_10_8():
+        k = list(clips.keys())
+        v = list(clips.values())
+        it = list(clips.items())
+        # NodeSet keys/values/items may enumerate widget attrs or nodes
+        assert len(k) > 0, f"keys() is empty"
+        assert len(v) > 0, f"values() is empty"
+        assert len(it) > 0, f"items() is empty"
+    _run_test(collector, stage, "10.8", "group.keys()/values()/items()", t_10_8)
+
+    # 10.9 group.to_list()
+    def t_10_9():
+        lst = clips.to_list()
+        assert isinstance(lst, list), f"to_list() returned {type(lst)}"
+        assert len(lst) == 2, f"to_list() has {len(lst)} items"
+    _run_test(collector, stage, "10.9", "group.to_list()", t_10_9)
+
+    # 10.10 group.to_dict()
+    def t_10_10():
+        dct = clips.to_dict()
+        assert isinstance(dct, dict), f"to_dict() returned {type(dct)}"
+        assert len(dct) == 2, f"to_dict() has {len(dct)} items"
+    _run_test(collector, stage, "10.10", "group.to_dict()", t_10_10)
+
+    # 10.11 repr(group)
+    def t_10_11():
+        r = repr(clips)
+        assert "CLIPTextEncode" in r, f"repr missing 'CLIPTextEncode': {r}"
+    _run_test(collector, stage, "10.11", "repr(group)", t_10_11)
+
+    # 10.12 Negative index group[-1]
+    def t_10_12():
+        last = clips[-1]
+        assert hasattr(last, 'type'), f"clips[-1] has no .type: {type(last)}"
+        assert last.id == clips[1].id, "clips[-1] should equal clips[1]"
+    _run_test(collector, stage, "10.12", "Negative index group[-1]", t_10_12)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 11 — WidgetValue: Transparent Value Wrapper
+# ===================================================================
+def stage_11(collector: ResultCollector) -> None:
+    stage = "Stage 11: WidgetValue"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow.models import WidgetValue
+
+    # Create test WidgetValues
+    wv_int = WidgetValue(42)
+    wv_float = WidgetValue(3.14)
+    wv_str = WidgetValue("euler")
+    combo_spec = [["euler", "heun", "dpm"], {}]
+    wv_combo = WidgetValue("euler", combo_spec)
+    tooltip_spec = ["INT", {"default": 42, "tooltip": "Random seed value"}]
+    wv_tooltip = WidgetValue(42, tooltip_spec)
+
+    # 11.1 Equality with raw value
+    def t_11_1():
+        assert wv_int == 42, f"WidgetValue(42) != 42"
+        assert wv_str == "euler", f"WidgetValue('euler') != 'euler'"
+    _run_test(collector, stage, "11.1", "wv == raw_value", t_11_1)
+
+    # 11.2 Inequality
+    def t_11_2():
+        assert wv_int != 43, f"WidgetValue(42) == 43"
+        assert wv_str != "heun", f"WidgetValue('euler') == 'heun'"
+    _run_test(collector, stage, "11.2", "wv != other_value", t_11_2)
+
+    # 11.3 Addition
+    def t_11_3():
+        result = wv_int + 10
+        assert result == 52, f"42 + 10 = {result}"
+    _run_test(collector, stage, "11.3", "wv + 10", t_11_3)
+
+    # 11.4 Reverse addition
+    def t_11_4():
+        result = 10 + wv_int
+        assert result == 52, f"10 + 42 = {result}"
+    _run_test(collector, stage, "11.4", "10 + wv (radd)", t_11_4)
+
+    # 11.5 Subtraction
+    def t_11_5():
+        result = wv_int - 10
+        assert result == 32, f"42 - 10 = {result}"
+    _run_test(collector, stage, "11.5", "wv - 10", t_11_5)
+
+    # 11.6 Multiplication
+    def t_11_6():
+        result = wv_int * 2
+        assert result == 84, f"42 * 2 = {result}"
+    _run_test(collector, stage, "11.6", "wv * 2", t_11_6)
+
+    # 11.7 Division
+    def t_11_7():
+        result = wv_int / 2
+        assert result == 21.0, f"42 / 2 = {result}"
+    _run_test(collector, stage, "11.7", "wv / 2", t_11_7)
+
+    # 11.8 Ordering
+    def t_11_8():
+        assert wv_int < 100, "42 < 100 failed"
+        assert wv_int > 0, "42 > 0 failed"
+        assert wv_int <= 42, "42 <= 42 failed"
+        assert wv_int >= 42, "42 >= 42 failed"
+    _run_test(collector, stage, "11.8", "wv < 100, wv > 0, etc.", t_11_8)
+
+    # 11.9 int() / float() conversions
+    def t_11_9():
+        assert int(wv_int) == 42, f"int(wv) = {int(wv_int)}"
+        assert float(wv_float) == 3.14, f"float(wv) = {float(wv_float)}"
+    _run_test(collector, stage, "11.9", "int(wv) / float(wv)", t_11_9)
+
+    # 11.10 bool()
+    def t_11_10():
+        assert bool(wv_int) is True, "bool(42) should be True"
+        assert bool(WidgetValue(0)) is False, "bool(0) should be False"
+    _run_test(collector, stage, "11.10", "bool(wv)", t_11_10)
+
+    # 11.11 hash()
+    def t_11_11():
+        assert hash(wv_int) == hash(42), f"hash mismatch: {hash(wv_int)} vs {hash(42)}"
+    _run_test(collector, stage, "11.11", "hash(wv) == hash(raw)", t_11_11)
+
+    # 11.12 str() / repr()
+    def t_11_12():
+        assert str(wv_int) == "42", f"str(wv) = {str(wv_int)!r}"
+        r = repr(wv_int)
+        assert "42" in r, f"repr missing '42': {r}"
+    _run_test(collector, stage, "11.12", "str(wv) / repr(wv)", t_11_12)
+
+    # 11.13 .value property
+    def t_11_13():
+        assert wv_int.value == 42, f"value = {wv_int.value}"
+        assert wv_str.value == "euler", f"value = {wv_str.value}"
+    _run_test(collector, stage, "11.13", ".value property", t_11_13)
+
+    # 11.14 .choices() on combo widget
+    def t_11_14():
+        choices = wv_combo.choices()
+        assert isinstance(choices, list), f"choices() returned {type(choices)}"
+        assert "euler" in choices, f"'euler' not in choices: {choices}"
+        assert "heun" in choices, f"'heun' not in choices: {choices}"
+    _run_test(collector, stage, "11.14", ".choices() on combo", t_11_14)
+
+    # 11.15 .tooltip() returns tooltip string
+    def t_11_15():
+        tt = wv_tooltip.tooltip()
+        assert tt == "Random seed value", f"tooltip = {tt!r}"
+    _run_test(collector, stage, "11.15", ".tooltip() returns string", t_11_15)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 12 — ApiFlow + NodeProxy: API Format
+# ===================================================================
+def stage_12(collector: ResultCollector) -> None:
+    stage = "Stage 12: ApiFlow + NodeProxy"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow import Workflow, ApiFlow
+    import copy as copy_mod
+
+    wf_path = str(_BUNDLED_WORKFLOW)
+    api = Workflow(wf_path, node_info=BUILTIN_NODE_INFO)
+
+    # 12.1 deepcopy produces independent copy
+    def t_12_1():
+        api2 = copy_mod.deepcopy(api)
+        assert isinstance(api2, ApiFlow), f"deepcopy returned {type(api2)}"
+        assert len(api2) == len(api), "deepcopy length mismatch"
+    _run_test(collector, stage, "12.1", "deepcopy(api) independent", t_12_1)
+
+    # 12.2 api.source property
+    def t_12_2():
+        s = api.source
+        # Source may be None for Workflow-converted APIs, but shouldn't crash
+        # Verify it's a string or None
+        assert s is None or isinstance(s, str), f"source is {type(s)}"
+    _run_test(collector, stage, "12.2", "api.source property", t_12_2)
+
+    # 12.3 api.dag returns Dag
+    def t_12_3():
+        dag = api.dag
+        assert dag is not None, "api.dag is None"
+        assert isinstance(dag, dict), f"dag is {type(dag)}"
+    _run_test(collector, stage, "12.3", "api.dag returns Dag", t_12_3)
+
+    # 12.4 api.KSampler returns node accessor
+    def t_12_4():
+        ks = api.KSampler
+        assert ks is not None, "api.KSampler is None"
+        assert hasattr(ks, '__len__'), f"api.KSampler has no __len__: {type(ks)}"
+    _run_test(collector, stage, "12.4", "api.KSampler → NodeProxy", t_12_4)
+
+    # 12.5 NodeProxy.id returns str or int
+    def t_12_5():
+        ks = api.KSampler[0]
+        nid = ks.id
+        assert isinstance(nid, (str, int)), f"id is {type(nid)}, expected str or int"
+    _run_test(collector, stage, "12.5", "NodeProxy.id returns str", t_12_5)
+
+    # 12.6 NodeProxy.class_type or .type
+    def t_12_6():
+        ks = api.KSampler[0]
+        ct = getattr(ks, 'class_type', None) or getattr(ks, 'type', None)
+        assert ct == "KSampler", f"class_type/type = {ct!r}"
+    _run_test(collector, stage, "12.6", "NodeProxy.class_type", t_12_6)
+
+    # 12.7 NodeProxy.inputs or widget access
+    def t_12_7():
+        ks = api.KSampler[0]
+        # In flowtree model, inputs may be accessed via dot notation
+        seed = ks.seed
+        assert seed is not None, "ks.seed is None"
+    _run_test(collector, stage, "12.7", "NodeProxy.inputs", t_12_7)
+
+    # 12.8 NodeProxy has .node or dict-like data
+    def t_12_8():
+        ks = api.KSampler[0]
+        n = getattr(ks, 'node', None) or getattr(ks, 'unwrap', lambda: None)()
+        assert n is not None, "Could not get raw node data"
+    _run_test(collector, stage, "12.8", "NodeProxy.node → raw dict", t_12_8)
+
+    # 12.9 NodeProxy.attrs()
+    def t_12_9():
+        ks = api.KSampler[0]
+        a = ks.attrs()
+        assert isinstance(a, list), f"attrs() returned {type(a)}"
+        assert "seed" in a, f"'seed' not in attrs()"
+    _run_test(collector, stage, "12.9", "NodeProxy.attrs()", t_12_9)
+
+    # 12.10 repr(NodeProxy)
+    def t_12_10():
+        r = repr(api.KSampler[0])
+        assert "KSampler" in r, f"repr missing 'KSampler': {r}"
+    _run_test(collector, stage, "12.10", "repr(NodeProxy)", t_12_10)
+
+    # 12.11 api.save() + reload
+    def t_12_11():
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            api.save(tmp_path)
+            api2 = ApiFlow.load(tmp_path)
+            assert len(api2) == len(api), "save→reload length mismatch"
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    _run_test(collector, stage, "12.11", "api.save() → ApiFlow.load()", t_12_11)
+
+    # 12.12 ApiFlow.load(path)
+    def t_12_12():
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp:
+            tmp.write(api.to_json())
+            tmp_path = tmp.name
+        try:
+            loaded = ApiFlow.load(tmp_path)
+            assert isinstance(loaded, ApiFlow), f"load() returned {type(loaded)}"
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    _run_test(collector, stage, "12.12", "ApiFlow.load(path)", t_12_12)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 13 — NodeInfo: Schema Object
+# ===================================================================
+def stage_13(collector: ResultCollector) -> None:
+    stage = "Stage 13: NodeInfo"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow import NodeInfo
+
+    ni = NodeInfo(BUILTIN_NODE_INFO)
+
+    # 13.1 Construction
+    def t_13_1():
+        assert ni is not None, "NodeInfo(dict) returned None"
+        from collections.abc import MutableMapping
+        assert isinstance(ni, MutableMapping), f"NodeInfo should be MutableMapping, got {type(ni)}"
+        assert len(ni) == len(BUILTIN_NODE_INFO), "NodeInfo length mismatch"
+    _run_test(collector, stage, "13.1", "NodeInfo(dict) constructor", t_13_1)
+
+    # 13.2 source property
+    def t_13_2():
+        s = ni.source
+        assert isinstance(s, str), f"source is {type(s)}"
+        assert s == "dict", f"source = {s!r}, expected 'dict'"
+    _run_test(collector, stage, "13.2", "ni.source == 'dict'", t_13_2)
+
+    # 13.3 Bracket access
+    def t_13_3():
+        ks = ni["KSampler"]
+        assert ks is not None, "ni['KSampler'] returned None"
+        # May be dict or DictView — just check it's dict-like
+        assert hasattr(ks, '__getitem__'), f"ni['KSampler'] is not subscriptable: {type(ks)}"
+    _run_test(collector, stage, "13.3", "ni['KSampler'] bracket access", t_13_3)
+
+    # 13.4 Dot access
+    def t_13_4():
+        ks = ni.KSampler
+        assert ks is not None, "ni.KSampler returned None"
+    _run_test(collector, stage, "13.4", "ni.KSampler dot access", t_13_4)
+
+    # 13.5 find(q="sampler") fuzzy
+    def t_13_5():
+        results = ni.find("sampler")
+        assert len(results) >= 1, f"find('sampler') returned {len(results)} results"
+    _run_test(collector, stage, "13.5", "ni.find('sampler') fuzzy", t_13_5)
+
+    # 13.6 find(class_type="KSampler") exact
+    def t_13_6():
+        results = ni.find(class_type="KSampler")
+        assert len(results) == 1, f"find(class_type='KSampler') returned {len(results)} results"
+    _run_test(collector, stage, "13.6", "ni.find(class_type='KSampler') exact", t_13_6)
+
+    # 13.7 to_json()
+    def t_13_7():
+        j = ni.to_json()
+        assert isinstance(j, str), f"to_json() returned {type(j)}"
+        parsed = json.loads(j)
+        assert isinstance(parsed, dict), "to_json() not valid JSON dict"
+        assert "KSampler" in parsed, "'KSampler' missing from to_json()"
+    _run_test(collector, stage, "13.7", "ni.to_json()", t_13_7)
+
+    # 13.8 save() + load() round-trip
+    def t_13_8():
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            ni.save(tmp_path)
+            ni2 = NodeInfo.load(tmp_path)
+            assert isinstance(ni2, NodeInfo), f"load() returned {type(ni2)}"
+            assert "KSampler" in ni2, "'KSampler' missing after round-trip"
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    _run_test(collector, stage, "13.8", "ni.save() → NodeInfo.load()", t_13_8)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 14 — DictView / ListView: Proxy Objects
+# ===================================================================
+def stage_14(collector: ResultCollector) -> None:
+    stage = "Stage 14: DictView / ListView"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow.models import DictView, ListView
+
+    # 14.1 Dot-read on DictView
+    def t_14_1():
+        d = {"foo": 1, "bar": "baz"}
+        dv = DictView(d)
+        assert dv.foo == 1, f"dv.foo = {dv.foo}"
+        assert dv.bar == "baz", f"dv.bar = {dv.bar}"
+    _run_test(collector, stage, "14.1", "DictView dot-read", t_14_1)
+
+    # 14.2 Dot-write propagates to original
+    def t_14_2():
+        d = {"x": 10}
+        dv = DictView(d)
+        dv.x = 20
+        assert d["x"] == 20, f"Original not mutated: {d}"
+    _run_test(collector, stage, "14.2", "DictView dot-write propagates", t_14_2)
+
+    # 14.3 Bracket read/write
+    def t_14_3():
+        d = {"a": 1}
+        dv = DictView(d)
+        assert dv["a"] == 1, f"dv['a'] = {dv['a']}"
+        dv["a"] = 99
+        assert d["a"] == 99, f"Original not mutated: {d}"
+    _run_test(collector, stage, "14.3", "DictView bracket read/write", t_14_3)
+
+    # 14.4 del dv["key"]
+    def t_14_4():
+        d = {"a": 1, "b": 2}
+        dv = DictView(d)
+        del dv["a"]
+        assert "a" not in d, f"Key not deleted from original: {d}"
+    _run_test(collector, stage, "14.4", "del DictView['key']", t_14_4)
+
+    # 14.5 keys() / values() / items()
+    def t_14_5():
+        d = {"x": 1, "y": 2}
+        dv = DictView(d)
+        assert set(dv.keys()) == {"x", "y"}, f"keys() = {list(dv.keys())}"
+        assert list(dv.values()) == [1, 2] or set(dv.values()) == {1, 2}
+        assert len(list(dv.items())) == 2
+    _run_test(collector, stage, "14.5", "DictView keys()/values()/items()", t_14_5)
+
+    # 14.6 update()
+    def t_14_6():
+        d = {"a": 1}
+        dv = DictView(d)
+        dv.update({"b": 2})
+        assert d == {"a": 1, "b": 2}, f"update() failed: {d}"
+    _run_test(collector, stage, "14.6", "DictView update()", t_14_6)
+
+    # 14.7 pop()
+    def t_14_7():
+        d = {"a": 1, "b": 2}
+        dv = DictView(d)
+        val = dv.pop("a")
+        assert val == 1, f"pop() returned {val}"
+        assert "a" not in d, f"Key not removed: {d}"
+    _run_test(collector, stage, "14.7", "DictView pop()", t_14_7)
+
+    # 14.8 copy() returns independent dict-like
+    def t_14_8():
+        d = {"a": 1}
+        dv = DictView(d)
+        dv2 = dv.copy()
+        # copy may return DictView or dict — both are valid
+        assert isinstance(dv2, (DictView, dict)), f"copy() returned {type(dv2)}"
+        dv2["a"] = 99
+        assert d["a"] == 1, "copy() should be independent"
+    _run_test(collector, stage, "14.8", "DictView copy()", t_14_8)
+
+    # 14.9 repr() / str()
+    def t_14_9():
+        dv = DictView({"x": 1})
+        r = repr(dv)
+        s = str(dv)
+        assert isinstance(r, str) and len(r) > 0, f"repr() = {r!r}"
+        assert isinstance(s, str) and len(s) > 0, f"str() = {s!r}"
+    _run_test(collector, stage, "14.9", "DictView repr()/str()", t_14_9)
+
+    # 14.10 ListView iteration + indexing
+    def t_14_10():
+        data = [10, 20, 30]
+        lv = ListView(data)
+        assert len(lv) == 3, f"len(lv) = {len(lv)}"
+        assert lv[0] == 10, f"lv[0] = {lv[0]}"
+        assert lv[2] == 30, f"lv[2] = {lv[2]}"
+        items = list(lv)
+        assert items == [10, 20, 30], f"list(lv) = {items}"
+    _run_test(collector, stage, "14.10", "ListView iteration + indexing", t_14_10)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
+# STAGE 15 — Workflow Factory: Auto-Detection
+# ===================================================================
+def stage_15(collector: ResultCollector) -> None:
+    stage = "Stage 15: Workflow Factory"
+    print(f"\n{'='*60}")
+    print(f"  {stage}")
+    print(f"{'='*60}\n")
+
+    from autoflow import Workflow, Flow, ApiFlow
+
+    wf_path = str(_BUNDLED_WORKFLOW)
+
+    # 15.1 Workflow(flow_dict) auto-converts to ApiFlow
+    def t_15_1():
+        with open(wf_path, "r") as fh:
+            d = json.load(fh)
+        result = Workflow(d, node_info=BUILTIN_NODE_INFO)
+        assert isinstance(result, ApiFlow), f"Expected ApiFlow, got {type(result)}"
+    _run_test(collector, stage, "15.1", "Workflow(flow_dict) → ApiFlow", t_15_1)
+
+    # 15.2 Workflow(api_json) returns ApiFlow
+    def t_15_2():
+        api = Workflow(wf_path, node_info=BUILTIN_NODE_INFO)
+        api_json = api.to_json()
+        result = Workflow(api_json)
+        assert isinstance(result, ApiFlow), f"Expected ApiFlow, got {type(result)}"
+    _run_test(collector, stage, "15.2", "Workflow(api_dict) → ApiFlow", t_15_2)
+
+    # 15.3 Workflow(path, auto_convert=False) returns Flow
+    def t_15_3():
+        result = Workflow(wf_path, auto_convert=False)
+        assert isinstance(result, Flow), f"Expected Flow, got {type(result)}"
+    _run_test(collector, stage, "15.3", "Workflow(path, auto_convert=False) → Flow", t_15_3)
+
+    # 15.4 Workflow.load(path) classmethod
+    def t_15_4():
+        result = Workflow.load(wf_path, node_info=BUILTIN_NODE_INFO)
+        assert isinstance(result, (Flow, ApiFlow)), f"Expected Flow or ApiFlow, got {type(result)}"
+    _run_test(collector, stage, "15.4", "Workflow.load(path)", t_15_4)
+
+    _print_stage_summary(collector, stage)
+
+
+# ===================================================================
 # Report generation
 # ===================================================================
 def _print_stage_summary(collector: ResultCollector, stage: str) -> None:
@@ -1774,6 +2683,14 @@ def main() -> int:
     stage_2(collector)
     stage_3(collector)
     stage_4(collector)
+    stage_8(collector)
+    stage_9(collector)
+    stage_10(collector)
+    stage_11(collector)
+    stage_12(collector)
+    stage_13(collector)
+    stage_14(collector)
+    stage_15(collector)
 
     # Prompted stages
     fixtures_dir = args.fixtures_dir
