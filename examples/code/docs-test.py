@@ -148,10 +148,120 @@ DEFAULT_WORKFLOW = REPO_ROOT / "default.json"
 DEFAULT_NODE_INFO = REPO_ROOT / "node_info.json"
 DEFAULT_IMAGE = REPO_ROOT / "comfyui-image.png"
 
+# Known fixture fallback locations (checked in order)
+_FIXTURE_CANDIDATES = [
+    REPO_ROOT / "autoflow-test-suite" / "fixtures" / "logo-basic",
+    REPO_ROOT / "fixtures" / "logo-basic",
+]
+
+# Bundled workflow inside the package (last resort for default.json)
+_BUNDLED_WORKFLOW = REPO_ROOT / "autoflow" / "data" / "bundled-workflow.json"
+
 # Ensure repo-local imports work when running this script directly.
 # (When a script is executed, sys.path[0] is the script directory, not the repo root.)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+def _ensure_repo_defaults(*, interactive: bool = True) -> bool:
+    """Check for missing default files and offer to symlink or copy them.
+
+    Returns True if all required files exist (or were successfully created),
+    False if a required file is still missing after the prompt.
+    """
+    import shutil
+
+    # Find a fixture dir that has the files we need
+    fixture_dir: Optional[Path] = None
+    for candidate in _FIXTURE_CANDIDATES:
+        if candidate.is_dir():
+            fixture_dir = candidate
+            break
+
+    # Build a mapping of {target: [possible sources]}
+    needs: list[tuple[Path, str, list[Path]]] = []
+
+    # default.json  <-  fixture/workflow.json or examples fallback
+    if not DEFAULT_WORKFLOW.exists():
+        sources: list[Path] = []
+        if fixture_dir:
+            p = fixture_dir / "workflow.json"
+            if p.is_file():
+                sources.append(p)
+        wf_examples = REPO_ROOT / "examples" / "workflows" / "workflow.json"
+        if wf_examples.is_file():
+            sources.append(wf_examples)
+        if _BUNDLED_WORKFLOW.is_file():
+            sources.append(_BUNDLED_WORKFLOW)
+        needs.append((DEFAULT_WORKFLOW, "workflow", sources))
+
+    # node_info.json  <-  fixture/node-info.json
+    if not DEFAULT_NODE_INFO.exists():
+        sources = []
+        if fixture_dir:
+            for name in ("node-info.json", "node_info.json", "object_info.json"):
+                p = fixture_dir / name
+                if p.is_file():
+                    sources.append(p)
+        needs.append((DEFAULT_NODE_INFO, "node_info", sources))
+
+    # comfyui-image.png  <-  fixture/ground-truth/*.png
+    if not DEFAULT_IMAGE.exists():
+        sources = []
+        if fixture_dir:
+            gt_dir = fixture_dir / "ground-truth"
+            if gt_dir.is_dir():
+                for p in sorted(gt_dir.glob("*.png")):
+                    sources.append(p)
+                    break  # take first
+        needs.append((DEFAULT_IMAGE, "image", sources))
+
+    if not needs:
+        return True  # everything already exists
+
+    print("\n" + "=" * 70)
+    print("  docs-test setup: some default files are missing from the repo root")
+    print("=" * 70)
+    if fixture_dir:
+        print(f"  Fixture source: {fixture_dir}")
+    print()
+
+    all_ok = True
+    for target, kind, sources in needs:
+        rel_target = target.relative_to(REPO_ROOT)
+        if not sources:
+            print(f"  ✗ {rel_target} — no source found")
+            if kind == "image":
+                print(f"    (optional — PNG-based doc examples will be skipped)")
+            else:
+                all_ok = False
+            continue
+
+        src = sources[0]
+        rel_src = src.relative_to(REPO_ROOT) if str(src).startswith(str(REPO_ROOT)) else src
+
+        if not interactive or not sys.stdin.isatty():
+            # Non-interactive: auto-copy
+            shutil.copy2(str(src), str(target))
+            print(f"  ✓ {rel_target} — copied from {rel_src}")
+            continue
+
+        print(f"  Missing: {rel_target}")
+        print(f"  Source:  {rel_src}")
+        choice = input("  Action — [s]ymlink / [c]opy / [S]kip? ").strip().lower()
+        if choice == "s":
+            target.symlink_to(src)
+            print(f"    → symlinked")
+        elif choice == "c":
+            shutil.copy2(str(src), str(target))
+            print(f"    → copied")
+        else:
+            print(f"    → skipped")
+            if kind != "image":
+                all_ok = False
+
+    print()
+    return all_ok
 
 
 # -----------------------------------------------------------------------------
@@ -1083,6 +1193,9 @@ def _split_csv(s: Optional[str]) -> List[str]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    # Check for missing default files and offer to set them up
+    _ensure_repo_defaults(interactive=(sys.stdin.isatty() and "--non-interactive" not in (argv or sys.argv)))
+
     _register_doc_blocks(docs_dir=DOCS_DIR, include_langs=["python", "bash", "json", "text", ""])
 
     p = argparse.ArgumentParser(
