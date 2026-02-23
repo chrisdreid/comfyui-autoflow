@@ -626,6 +626,57 @@ _EXTRA_NODES_INIT_DONE = False
 _CORE_NODES_THRESHOLD = 100
 
 
+def _fix_comfyui_imports() -> None:
+    """Fix import-shadowing issues before loading extra nodes.
+
+    ComfyUI has a top-level ``utils/`` package (with ``utils/install_util.py``
+    etc.) that is required by ``server.py`` → ``app/frontend_management.py``.
+    However, importing ``comfy.utils`` (which happens early when loading
+    ``comfy.samplers`` / ``comfy.sd``) can poison Python's import resolution so
+    that a bare ``import utils`` resolves to ``comfy/utils.py`` instead of the
+    top-level ``utils/`` package.  This causes every node that does
+    ``from server import PromptServer`` to fail with
+    ``"'utils' is not a package"``.
+
+    This function detects the ComfyUI root and pre-registers the correct
+    ``utils`` package in ``sys.modules`` so downstream imports work.
+    """
+    import importlib
+    import importlib.util
+
+    # If utils is already correctly imported as a package, nothing to do.
+    existing = sys.modules.get("utils")
+    if existing is not None and hasattr(existing, "__path__"):
+        return
+
+    # Find the ComfyUI root that contains utils/__init__.py
+    root = _detect_comfyui_root_from_imports()
+    if root is None:
+        return
+
+    utils_init = root / "utils" / "__init__.py"
+    if not utils_init.is_file():
+        return
+
+    # Import the correct utils package and register it
+    spec = importlib.util.spec_from_file_location(
+        "utils",
+        str(utils_init),
+        submodule_search_locations=[str(root / "utils")],
+    )
+    if spec is None or spec.loader is None:
+        return
+
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["utils"] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        # If it fails, at least the module is registered; submodule
+        # imports may still work since we set submodule_search_locations.
+        pass
+
+
 def _ensure_extra_nodes_loaded() -> None:
     """Lazily call ComfyUI's ``init_extra_nodes()`` if it hasn't run yet.
 
@@ -652,6 +703,9 @@ def _ensure_extra_nodes_loaded() -> None:
 
     import asyncio
     import logging
+
+    # Fix import-shadowing so that `from server import PromptServer` works.
+    _fix_comfyui_imports()
 
     try:
         loop = asyncio.get_running_loop()
