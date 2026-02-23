@@ -572,9 +572,9 @@ def _make_sandbox(
     if make_api_payload:
         # Create workflow-api.json using offline conversion.
         # Import locally to keep this script usable even if autoflow isn't installed (repo-local usage).
-        from autoflow import Workflow  # type: ignore
+        from autoflow import ApiFlow  # type: ignore
 
-        api = Workflow(str(wf), node_info=str(oi))
+        api = ApiFlow(str(wf), node_info=str(oi))
         api.save(str(wf_api))
 
     # Ensure PNG samples contain ComfyUI-style metadata so docs snippets that use Flow.load(ApiFlow.load)
@@ -973,7 +973,7 @@ def e2e_server_roundtrip(
     sb_wf.write_text(_read_text(wf_path), encoding="utf-8")
 
     # Import locally (repo-local usage).
-    from autoflow import Workflow, ApiFlow, Flow  # type: ignore
+    from autoflow import ApiFlow, Flow  # type: ignore
 
     def _apply_prompt_and_seed(api: Dict[str, Any]) -> Dict[str, Any]:
         a = api if isinstance(api, ApiFlow) else ApiFlow(api, node_info=str(oi_path))
@@ -1028,7 +1028,7 @@ def e2e_server_roundtrip(
         return bytes(b)
 
     # Run 1: template workflow -> api -> submit -> image
-    api1 = Workflow(str(sb_wf), node_info=str(oi_path))
+    api1 = ApiFlow(str(sb_wf), node_info=str(oi_path))
     api1 = _apply_prompt_and_seed(api1)  # type: ignore[assignment]
     b1 = _submit_and_first_image_bytes(api1)  # type: ignore[arg-type]
     img1_path = run_dir / "render-1.png"

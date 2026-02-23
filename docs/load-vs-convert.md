@@ -1,4 +1,4 @@
-# Load vs convert (Flow / ApiFlow / Workflow)
+# Load vs convert (Flow / ApiFlow)
 
 Use the right entry point based on what you have.
 
@@ -11,8 +11,8 @@ flowchart LR
   apiPayload["workflow-api.json"] --> apiFlowLoad["ApiFlow.load(...)"]
   png["ComfyUI PNG"] --> apiFlowLoad
   png --> flow
-  wrapper["Workflow(...)"] --> flow
-  wrapper --> apiFlowLoad
+  workspace --> autoDetect["ApiFlow(..., auto_convert=True)"]
+  autoDetect --> apiFlowLoad
 ```
 
 ## Polymorphic Loading
@@ -30,10 +30,10 @@ All `.load()` methods accept multiple input types:
 ## Quick rules
 - **Have `workflow.json` (workspace)**:
   - use `Flow.load(...)` (strict) if you want to inspect/edit first
-  - use `Workflow(...)` (convenience) if you just want an `ApiFlow`
+  - use `ApiFlow(...)` (auto-detects and converts workspace format)
 - **Have `workflow-api.json` (API payload)**:
   - use `ApiFlow.load(...)` (strict)
-  - or use `Workflow(...)` (auto-detect)
+  - or use `ApiFlow(...)` (auto-detect)
 - **Have a ComfyUI PNG output**:
   - use `ApiFlow.load("image.png")` to extract the API payload
   - use `Flow.load("image.png")` to extract the workspace
@@ -49,7 +49,7 @@ All `.load()` methods accept multiple input types:
 # api
 from autoflow import Flow
 
-flow = Flow.load("workflow.json")
+flow = Flow.load("examples/workflows/workflow.json")
 api = flow.convert(node_info="node_info.json")
 api.save("workflow-api.json")
 ```
@@ -62,23 +62,26 @@ api.save("workflow-api.json")
 # api
 from autoflow import ApiFlow
 
-api = ApiFlow.load("workflow-api.json")
+api = ApiFlow.load("examples/workflows/workflow-api.json")
 ```
 
-## Wrapper: `Workflow` (auto-detect)
-- If input looks like a workspace flow:
-  - returns `ApiFlow` (default `auto_convert=True`)
-  - or returns `Flow` (if `auto_convert=False`)
-- If input looks like an API payload:
-  - returns `ApiFlow`
+## `ApiFlow` with auto-detect
+
+`ApiFlow` now auto-detects workspace-format files and converts them automatically (default `auto_convert=True`):
 
 ```python
 # api
-from autoflow import Workflow
+from autoflow import ApiFlow
 
-api = Workflow("workflow.json", node_info="node_info.json")
-api2 = Workflow("workflow-api.json")
+# Workspace file → auto-converts to API payload
+api = ApiFlow("examples/workflows/workflow.json", node_info="node_info.json")
+
+# API payload → loads directly
+api2 = ApiFlow("examples/workflows/workflow-api.json")
 ```
+
+> [!NOTE]
+> **Deprecated: `Workflow`** — The old `Workflow(...)` class still works but emits a `DeprecationWarning`. Use `ApiFlow(...)` instead.
 
 ## PNG Loading (extract embedded workflow)
 
@@ -106,7 +109,7 @@ Access and modify nodes using clean attribute and path syntax:
 # api
 from autoflow import ApiFlow
 
-api = ApiFlow.load("workflow-api.json")
+api = ApiFlow.load("examples/workflows/workflow-api.json")
 
 # By class_type (case-insensitive)
 api.ksampler[0].seed = 42           # first KSampler
@@ -141,7 +144,7 @@ For `Flow` (workspace format), access nodes via `.nodes` to avoid conflicts with
 ```python
 # api
 from autoflow import Flow
-flow = Flow.load("workflow.json")
+flow = Flow.load("examples/workflows/workflow.json")
 
 # Access nodes via .nodes
 flow.nodes.ksampler[0].type        # "KSampler"
@@ -170,8 +173,8 @@ All proxy objects support conversion back to plain dicts/lists:
 ```python
 from autoflow import Flow, ApiFlow
 
-api = ApiFlow.load("workflow-api.json")
-flow = Flow.load("workflow.json")
+api = ApiFlow.load("examples/workflows/workflow-api.json")
+flow = Flow.load("examples/workflows/workflow.json")
 
 # Single node → dict
 dict(api.ksampler[0])              # or .to_dict()

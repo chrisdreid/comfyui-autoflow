@@ -11,7 +11,7 @@ autoflow normalizes `node_info` inputs through a shared resolver, so you can pas
 Server URLs are normalized the same way: empty strings are treated as missing, and
 `AUTOFLOW_COMFYUI_SERVER_URL` is used when server_url is omitted in conversion paths.
 
-If `AUTOFLOW_NODE_INFO_SOURCE` is set, `NodeInfo()`, `Flow`, `ApiFlow`, `Workflow`, and
+If `AUTOFLOW_NODE_INFO_SOURCE` is set, `NodeInfo()`, `Flow`, `ApiFlow`, and
 conversion helpers will auto-resolve node_info when none is provided.
 
 If it is **not** set, `NodeInfo()` returns an **empty** node_info (no error), and you can
@@ -19,7 +19,7 @@ load/fetch later.
 
 ```mermaid
 flowchart LR
-  workflowJson["workflow.json"] --> convertFn["Workflow(...)"]
+  workflowJson["workflow.json"] --> convertFn["ApiFlow(...)"]
   objectInfo["/object_info or node_info.json"] --> convertFn
   convertFn --> apiFlow["ApiFlow"]
 ```
@@ -30,7 +30,7 @@ Set `AUTOFLOW_COMFYUI_SERVER_URL` once and `server_url` / `--server-url` become 
 
 ```mermaid
 flowchart LR
-  env["AUTOFLOW_COMFYUI_SERVER_URL"] --> convert["Workflow(...)"]
+  env["AUTOFLOW_COMFYUI_SERVER_URL"] --> convert["ApiFlow(...)"]
   convert --> apiFlow["ApiFlow"]
 ```
 
@@ -93,7 +93,7 @@ oi = NodeInfo.load("node_info.json")
 If you're running inside a ComfyUI environment (repo + venv), you can build an
 `NodeInfo` from local node modules without starting the server.
 
-**Environment note**: this requires ComfyUI’s Python modules to be importable (same venv/conda env you run ComfyUI with, and ComfyUI repo root on `PYTHONPATH` or as your working directory).
+**Environment note**: this requires ComfyUI's Python modules to be importable (same venv/conda env you run ComfyUI with, and ComfyUI repo root on `PYTHONPATH` or as your working directory).
 
 Related:
 - Serverless execution (no ComfyUI HTTP server): [`execute.md`](execute.md)
@@ -148,7 +148,7 @@ Notes:
 autoflow currently supports an **internal** model implementation switch via an env var.
 
 - This is **experimental** and may be removed before release.
-- Only use it for local exploration/testing (don’t depend on it in production code).
+- Only use it for local exploration/testing (don't depend on it in production code).
 
 **Env var**: `AUTOFLOW_MODEL_LAYER`
 
