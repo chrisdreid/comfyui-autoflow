@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-03-02
+
+### Fixed
+- **`AUTOFLOW_COMFYUI_SERVER_URL` ignored by `NodeInfo('fetch')`** — `NodeInfo.__init__` hardcoded `allow_env=False` when an explicit input was provided, preventing the env var from being read. Changed to `allow_env=bool(allow_env)`.
+- **Graceful error messages** — replaced chained `ModuleNotFoundError` tracebacks (`from e`) with clean single-raise errors (`from None`) and actionable guidance listing all resolution options (env var, `server_url=`, file path, ComfyUI directory). Affected locations:
+  - `node_info_from_comfyui_modules()` in `convert.py`
+  - `get_widget_input_names()` in `convert.py`
+  - Resolver `fetch→modules` fallback in `convert.py` — now catches the modules failure and raises a combined error explaining both server and modules failed
+  - `NodeInfo.__init__` fallback error in `flowtree.py` — updated stale message to list all available options
+- **Test CLI reads `AUTOFLOW_COMFYUI_SERVER_URL`** — `detect_environment()` in `main.py` now falls back to the env var when `--server-url` is not provided
+
+### Added
+- Test `t_2_28` in `phase_02_nodeinfo.py` — covers the exact failing scenario: `NodeInfo('fetch')` with `AUTOFLOW_COMFYUI_SERVER_URL` env var set and no explicit `server_url`
+
+### Removed
+- **Legacy `stage_*.py` test files** (27 files) — all test coverage is now in the 8 `phase_*.py` files
+- `--legacy` and `--stage` CLI flags from `main.py`
+- `_discover_stages()` function from `main.py`
+
+---
+
 ## [1.4.0] - 2026-02-23
 
 ### Breaking Changes
