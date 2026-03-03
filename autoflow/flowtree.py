@@ -625,14 +625,37 @@ class Flow(_MappingWrapper):
             )
 
         # ---- Build widgets_values ----
+        # ComfyUI's frontend injects extra widgets for certain flags in the
+        # widget options dict (e.g. "control_after_generate": True adds a combo
+        # widget right after the INT widget). We must replicate this so the
+        # positional widgets_values array stays aligned.
         widget_names = get_widget_input_names(class_type, ni_dict, use_api=True)
         widgets_values = []
+        inputs_def = type_info.get("input", {})
         for wname in widget_names:
             if wname in widget_overrides:
                 widgets_values.append(widget_overrides[wname])
             else:
                 default = get_input_default(class_type, wname, ni_dict)
                 widgets_values.append(default)
+
+            # Check for frontend-injected follow-up widgets
+            spec = None
+            for section in ["required", "optional"]:
+                section_inputs = inputs_def.get(section, {})
+                if isinstance(section_inputs, dict) and wname in section_inputs:
+                    spec = section_inputs[wname]
+                    break
+            if spec and isinstance(spec, list) and len(spec) >= 2 and isinstance(spec[1], dict):
+                opts = spec[1]
+                # "control_after_generate": True → ComfyUI injects a combo
+                # widget with choices ["fixed","increment","decrement","randomize"]
+                if opts.get("control_after_generate"):
+                    cag_key = "control_after_generate"
+                    if cag_key in widget_overrides:
+                        widgets_values.append(widget_overrides[cag_key])
+                    else:
+                        widgets_values.append("randomize")
 
         # ---- Assign ID and position ----
         last_id = self._flow.get("last_node_id", 0)
