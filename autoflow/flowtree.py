@@ -514,6 +514,293 @@ class Flow(_MappingWrapper):
         # Delegate to legacy models.Flow implementation
         return getattr(self._flow, "dag")
 
+    # ------------------------------------------------------------------
+    # Builder API
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        node_info: Optional[Any] = None,
+    ) -> "Flow":
+        """Create a new, empty Flow for building workflows from scratch.
+
+        Args:
+            node_info: NodeInfo, dict, file path, or 'fetch' token.
+                       Required for add_node() to work.
+
+        Returns:
+            Empty Flow ready for add_node() / connect() calls.
+        """
+        skeleton = {
+            "last_node_id": 0,
+            "last_link_id": 0,
+            "nodes": [],
+            "links": [],
+            "groups": [],
+            "config": {},
+            "extra": {},
+            "version": 0.4,
+        }
+        # Unwrap flowtree NodeInfo to legacy for _from_raw().
+        oi_for_legacy = None
+        if isinstance(node_info, NodeInfo):
+            oi_for_legacy = node_info._oi
+        elif node_info is not None:
+            oi_for_legacy = node_info
+
+        legacy_flow = _legacy.Flow._from_raw(skeleton, node_info=oi_for_legacy)
+        inst = cls.__new__(cls)
+        inst._flow = legacy_flow
+        inst._data = legacy_flow
+        return inst
+
+    def add_node(
+        self,
+        class_type: str,
+        **widget_overrides: Any,
+    ) -> "NodeRef":
+        """Add a new node to this flow.
+
+        Uses node_info to build input slots, output slots, and widgets_values.
+        Widget defaults come from node_info; pass overrides as keyword args.
+
+        Args:
+            class_type: Node class type (e.g. 'KSampler').
+            **widget_overrides: Widget values to override defaults.
+
+        Returns:
+            A NodeRef wrapping the new node, with connect() / disconnect() support.
+
+        Raises:
+            ValueError: If node_info is not available or class_type unknown.
+        """
+        from .connection import (
+            get_connection_input_names,
+            get_output_slots,
+            get_all_input_names,
+            get_input_default,
+            _is_connection_only_input,
+        )
+        from .convert import get_widget_input_names
+
+        ni = getattr(self._flow, "node_info", None)
+        if ni is None:
+            raise ValueError(
+                "Flow has no node_info — pass node_info= to Flow.create() first."
+            )
+        ni_dict = dict(ni) if not isinstance(ni, dict) else ni
+
+        if class_type not in ni_dict:
+            raise ValueError(
+                f"Unknown node class '{class_type}'. Not found in node_info."
+            )
+        type_info = ni_dict[class_type]
+
+        # ---- Build input slots (connection-only inputs) ----
+        conn_inputs = get_connection_input_names(class_type, ni_dict)
+        input_slots = []
+        for name in conn_inputs:
+            # Determine the type from node_info
+            spec = None
+            inputs_def = type_info.get("input", {})
+            for section in ["required", "optional"]:
+                section_inputs = inputs_def.get(section, {})
+                if isinstance(section_inputs, dict) and name in section_inputs:
+                    spec = section_inputs[name]
+                    break
+            slot_type = spec[0] if spec and isinstance(spec[0], str) else "*"
+            input_slots.append({"name": name, "type": slot_type, "link": None})
+
+        # ---- Build output slots ----
+        out_slots_info = get_output_slots(class_type, ni_dict)
+        output_slots = []
+        for idx, name, out_type in out_slots_info:
+            output_slots.append(
+                {"name": name, "type": out_type, "slot_index": idx, "links": []}
+            )
+
+        # ---- Build widgets_values ----
+        widget_names = get_widget_input_names(class_type, ni_dict, use_api=True)
+        widgets_values = []
+        for wname in widget_names:
+            if wname in widget_overrides:
+                widgets_values.append(widget_overrides[wname])
+            else:
+                default = get_input_default(class_type, wname, ni_dict)
+                widgets_values.append(default)
+
+        # ---- Assign ID and position ----
+        last_id = self._flow.get("last_node_id", 0)
+        new_id = last_id + 1
+        self._flow["last_node_id"] = new_id
+
+        node_count = len(self._flow.get("nodes", []))
+        col = node_count % 4
+        row = node_count // 4
+        pos = [col * 400, row * 300]
+
+        # ---- Build the node dict ----
+        node_dict = {
+            "id": new_id,
+            "type": class_type,
+            "pos": pos,
+            "size": [315, 170],
+            "flags": {},
+            "order": node_count,
+            "mode": 0,
+            "inputs": input_slots,
+            "outputs": output_slots,
+            "properties": {"Node name for S&R": class_type},
+            "widgets_values": widgets_values,
+        }
+
+        self._flow.setdefault("nodes", []).append(node_dict)
+
+        # Invalidate DAG cache if present
+        try:
+            object.__delattr__(self._flow, "_autoflow_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+        # Build a NodeRef for chaining
+        proxy = _legacy.FlowNodeProxy(node_dict, len(self._flow["nodes"]) - 1, self._flow)
+        return NodeRef(
+            proxy,
+            kind="flow",
+            addr=str(new_id),
+            group=class_type,
+            index=0,
+            dotpath=f"nodes.{class_type}[0]",
+            dictpath=["nodes", len(self._flow["nodes"]) - 1],
+            flow=self,
+        )
+
+    def remove_node(
+        self,
+        node: Any,
+    ) -> None:
+        """Remove a node and all its connections from the flow.
+
+        Args:
+            node: A NodeRef, node ID (int), or node dict.
+        """
+        # Resolve node ID
+        if isinstance(node, NodeRef):
+            node_id = int(node.addr)
+        elif isinstance(node, int):
+            node_id = node
+        elif isinstance(node, dict):
+            node_id = node.get("id")
+        else:
+            node_id = int(node)
+
+        nodes = self._flow.get("nodes", [])
+        links = self._flow.get("links", [])
+
+        # Find and remove the node
+        node_idx = None
+        for i, n in enumerate(nodes):
+            if n.get("id") == node_id:
+                node_idx = i
+                break
+        if node_idx is None:
+            raise ValueError(f"Node {node_id} not found in flow")
+
+        removed_node = nodes[node_idx]
+
+        # Collect all link IDs touching this node
+        link_ids_to_remove = set()
+        for inp in removed_node.get("inputs", []):
+            lid = inp.get("link")
+            if lid is not None:
+                link_ids_to_remove.add(lid)
+        for outp in removed_node.get("outputs", []):
+            for lid in outp.get("links", []):
+                link_ids_to_remove.add(lid)
+
+        # Clean up references in other nodes
+        for link_id in link_ids_to_remove:
+            for n in nodes:
+                if n.get("id") == node_id:
+                    continue
+                for inp in n.get("inputs", []):
+                    if inp.get("link") == link_id:
+                        inp["link"] = None
+                for outp in n.get("outputs", []):
+                    out_links = outp.get("links", [])
+                    if link_id in out_links:
+                        out_links.remove(link_id)
+
+        # Remove links from the link table
+        self._flow["links"] = [
+            lnk for lnk in links
+            if not (isinstance(lnk, list) and len(lnk) >= 1 and lnk[0] in link_ids_to_remove)
+        ]
+
+        # Remove the node
+        nodes.pop(node_idx)
+
+        # Invalidate DAG cache
+        try:
+            object.__delattr__(self._flow, "_autoflow_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+    def auto_layout(
+        self,
+        spacing_x: int = 400,
+        spacing_y: int = 300,
+    ) -> None:
+        """Automatically position nodes left-to-right by topological depth.
+
+        Uses the flow's link table to determine DAG order, then assigns
+        positions based on each node's depth (column) and row within
+        that depth level.
+
+        Args:
+            spacing_x: Horizontal spacing between depth columns (pixels).
+            spacing_y: Vertical spacing between nodes in the same column.
+        """
+        nodes = self._flow.get("nodes", [])
+        links = self._flow.get("links", [])
+        if not nodes:
+            return
+
+        # Build adjacency: node_id → set of predecessor node_ids
+        preds: Dict[int, set] = {n["id"]: set() for n in nodes if "id" in n}
+        for lnk in links:
+            if isinstance(lnk, list) and len(lnk) >= 4:
+                src_id, dst_id = lnk[1], lnk[3]
+                if dst_id in preds:
+                    preds[dst_id].add(src_id)
+
+        # Simple iterative toposort to compute depth
+        depth: Dict[int, int] = {}
+        changed = True
+        for nid in preds:
+            depth[nid] = 0
+        while changed:
+            changed = False
+            for nid, pred_ids in preds.items():
+                for pid in pred_ids:
+                    if pid in depth and depth[pid] + 1 > depth.get(nid, 0):
+                        depth[nid] = depth[pid] + 1
+                        changed = True
+
+        # Group nodes by depth
+        depth_groups: Dict[int, list] = {}
+        for n in nodes:
+            nid = n.get("id")
+            d = depth.get(nid, 0)
+            depth_groups.setdefault(d, []).append(n)
+
+        # Assign positions
+        for d, group in sorted(depth_groups.items()):
+            for row, n in enumerate(group):
+                n["pos"] = [d * spacing_x, row * spacing_y]
+
 
 class NodeInfo(_MappingWrapper):
     def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.NodeInfo]] = None, **kwargs: Any):
@@ -696,7 +983,7 @@ class NodeRef:
     Wrap a single legacy proxy (FlowNodeProxy or NodeProxy) and provide path metadata.
     """
 
-    __slots__ = ("_p", "kind", "addr", "group", "index", "path", "where", "dictpath")
+    __slots__ = ("_p", "_flow", "kind", "addr", "group", "index", "path", "where", "dictpath")
 
     def __init__(
         self,
@@ -708,8 +995,10 @@ class NodeRef:
         index: Optional[int],
         dotpath: str,
         dictpath: List[Any],
+        flow: Optional["Flow"] = None,
     ):
         object.__setattr__(self, "_p", proxy)
+        object.__setattr__(self, "_flow", flow)
         self.kind = kind
         self.addr = addr
         self.group = group
@@ -877,6 +1166,368 @@ class NodeRef:
             return {n: getattr(self._p, n, None) for n in names}
         except Exception:
             return {}
+
+    # ------------------------------------------------------------------
+    # Connection management (builder API)
+    # ------------------------------------------------------------------
+
+    def _get_flow_data(self) -> Dict[str, Any]:
+        """Return the underlying flow dict for link table operations."""
+        flow = object.__getattribute__(self, "_flow")
+        if flow is None:
+            raise RuntimeError(
+                "This NodeRef has no flow reference — connect/disconnect require "
+                "a NodeRef created by Flow.add_node() or accessed from a builder Flow."
+            )
+        # flow is flowtree.Flow, flow._flow is legacy Flow (dict subclass)
+        return flow._flow
+
+    def _find_node_dict(self, flow_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Find this node's raw dict in the flow's nodes list."""
+        node_id = int(self.addr)
+        for n in flow_data.get("nodes", []):
+            if n.get("id") == node_id:
+                return n
+        raise ValueError(f"Node {node_id} not found in flow")
+
+    def connect(
+        self,
+        input_name: str,
+        src_node: "NodeRef",
+        output_name_or_index: Any = 0,
+    ) -> None:
+        """Connect an input on this node to an output on src_node.
+
+        Args:
+            input_name: Name of the input slot on this (destination) node.
+            src_node: The source NodeRef to connect from.
+            output_name_or_index: Output slot on src_node — name (str) or index (int).
+        """
+        if self.kind == "api":
+            return self._connect_api(input_name, src_node, output_name_or_index)
+        return self._connect_flow(input_name, src_node, output_name_or_index)
+
+    def _connect_flow(
+        self,
+        input_name: str,
+        src_node: "NodeRef",
+        output_name_or_index: Any = 0,
+    ) -> None:
+        """Connect for workspace Flow nodes (link table surgery)."""
+        flow_data = self._get_flow_data()
+        dst_dict = self._find_node_dict(flow_data)
+        src_dict = src_node._find_node_dict(flow_data)
+
+        # Resolve destination input slot
+        dst_slot_idx = None
+        dst_slot = None
+        for i, inp in enumerate(dst_dict.get("inputs", [])):
+            if inp.get("name") == input_name:
+                dst_slot_idx = i
+                dst_slot = inp
+                break
+        if dst_slot is None:
+            raise ValueError(
+                f"Input '{input_name}' not found on node {dst_dict.get('type', '?')} "
+                f"(id={dst_dict.get('id')}). "
+                f"Available: {[s.get('name') for s in dst_dict.get('inputs', [])]}"
+            )
+
+        # Resolve source output slot
+        src_slot_idx = None
+        src_slot = None
+        outputs = src_dict.get("outputs", [])
+        if isinstance(output_name_or_index, int):
+            if 0 <= output_name_or_index < len(outputs):
+                src_slot_idx = output_name_or_index
+                src_slot = outputs[output_name_or_index]
+            else:
+                raise ValueError(
+                    f"Output index {output_name_or_index} out of range "
+                    f"(node {src_dict.get('type', '?')} has {len(outputs)} outputs)"
+                )
+        else:
+            out_name = str(output_name_or_index)
+            for i, outp in enumerate(outputs):
+                if outp.get("name") == out_name:
+                    src_slot_idx = i
+                    src_slot = outp
+                    break
+            if src_slot is None:
+                raise ValueError(
+                    f"Output '{output_name_or_index}' not found on node "
+                    f"{src_dict.get('type', '?')} (id={src_dict.get('id')}). "
+                    f"Available: {[s.get('name') for s in outputs]}"
+                )
+
+        # If already connected, disconnect first
+        if dst_slot.get("link") is not None:
+            self._disconnect_flow_slot(flow_data, dst_dict, dst_slot)
+
+        # Create new link
+        last_link = flow_data.get("last_link_id", 0)
+        new_link_id = last_link + 1
+        flow_data["last_link_id"] = new_link_id
+
+        type_name = dst_slot.get("type", src_slot.get("type", "*"))
+        link_entry = [
+            new_link_id,
+            src_dict["id"],
+            src_slot_idx,
+            dst_dict["id"],
+            dst_slot_idx,
+            type_name,
+        ]
+        flow_data.setdefault("links", []).append(link_entry)
+
+        # Update both nodes
+        dst_slot["link"] = new_link_id
+        src_slot.setdefault("links", []).append(new_link_id)
+
+        # Invalidate DAG cache
+        try:
+            object.__delattr__(flow_data, "_autoflow_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+    def _connect_api(
+        self,
+        input_name: str,
+        src_node: "NodeRef",
+        output_slot: Any = 0,
+    ) -> None:
+        """Connect for API nodes (simple ref write)."""
+        d = self._data_ref()
+        inputs = d.get("inputs")
+        if not isinstance(inputs, dict):
+            d["inputs"] = inputs = {}
+        slot_idx = int(output_slot) if isinstance(output_slot, (int, float)) else 0
+        inputs[input_name] = [str(src_node.addr), slot_idx]
+
+    def disconnect(self, input_name: str) -> None:
+        """Disconnect an input on this node.
+
+        Args:
+            input_name: Name of the input slot to disconnect.
+        """
+        if self.kind == "api":
+            return self._disconnect_api(input_name)
+        return self._disconnect_flow(input_name)
+
+    def _disconnect_flow(self, input_name: str) -> None:
+        """Disconnect for workspace Flow nodes."""
+        flow_data = self._get_flow_data()
+        dst_dict = self._find_node_dict(flow_data)
+
+        # Find the input slot
+        dst_slot = None
+        for inp in dst_dict.get("inputs", []):
+            if inp.get("name") == input_name:
+                dst_slot = inp
+                break
+        if dst_slot is None:
+            raise ValueError(f"Input '{input_name}' not found on node {dst_dict.get('id')}")
+
+        if dst_slot.get("link") is None:
+            return  # already disconnected
+
+        self._disconnect_flow_slot(flow_data, dst_dict, dst_slot)
+
+        # Invalidate DAG cache
+        try:
+            object.__delattr__(flow_data, "_autoflow_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+    @staticmethod
+    def _disconnect_flow_slot(
+        flow_data: Dict[str, Any],
+        dst_dict: Dict[str, Any],
+        dst_slot: Dict[str, Any],
+    ) -> None:
+        """Internal: remove a single link from the flow."""
+        link_id = dst_slot.get("link")
+        if link_id is None:
+            return
+
+        # Find the link entry to get source info
+        links = flow_data.get("links", [])
+        for lnk in links:
+            if isinstance(lnk, list) and len(lnk) >= 4 and lnk[0] == link_id:
+                src_node_id = lnk[1]
+                src_slot_idx = lnk[2]
+                # Remove from source node's output links
+                for n in flow_data.get("nodes", []):
+                    if n.get("id") == src_node_id:
+                        outputs = n.get("outputs", [])
+                        if src_slot_idx < len(outputs):
+                            out_links = outputs[src_slot_idx].get("links", [])
+                            if link_id in out_links:
+                                out_links.remove(link_id)
+                        break
+                break
+
+        # Clear destination input
+        dst_slot["link"] = None
+
+        # Remove link entry
+        flow_data["links"] = [
+            lnk for lnk in links
+            if not (isinstance(lnk, list) and len(lnk) >= 1 and lnk[0] == link_id)
+        ]
+
+    def _disconnect_api(self, input_name: str) -> None:
+        """Disconnect for API nodes."""
+        d = self._data_ref()
+        inputs = d.get("inputs")
+        if isinstance(inputs, dict) and input_name in inputs:
+            val = inputs[input_name]
+            if isinstance(val, list):
+                del inputs[input_name]
+
+    @property
+    def connections(self) -> Dict[str, Any]:
+        """Return a dict of input connections: {input_name: Connection(...)}.
+
+        Only populated connections are included (unlinked inputs are omitted).
+        """
+        from .connection import Connection
+
+        if self.kind == "api":
+            return self._connections_api()
+        return self._connections_flow()
+
+    def _connections_flow(self) -> Dict[str, Any]:
+        """Read connections for Flow nodes via the link table."""
+        from .connection import Connection
+
+        flow_data = self._get_flow_data()
+        node_dict = self._find_node_dict(flow_data)
+        result: Dict[str, Any] = {}
+
+        # Build a link_id → link_entry map for fast lookup
+        link_map: Dict[int, list] = {}
+        for lnk in flow_data.get("links", []):
+            if isinstance(lnk, list) and len(lnk) >= 6:
+                link_map[lnk[0]] = lnk
+
+        # Build a node_id → type map
+        type_map: Dict[int, str] = {}
+        for n in flow_data.get("nodes", []):
+            type_map[n.get("id", -1)] = n.get("type", "")
+
+        for inp in node_dict.get("inputs", []):
+            lid = inp.get("link")
+            if lid is None:
+                continue
+            lnk = link_map.get(lid)
+            if lnk is None:
+                continue
+            src_id = lnk[1]
+            src_slot = lnk[2]
+            result[inp["name"]] = Connection(
+                input_name=inp["name"],
+                from_node_id=str(src_id),
+                from_output=src_slot,
+                from_class_type=type_map.get(src_id, ""),
+            )
+        return result
+
+    def _connections_api(self) -> Dict[str, Any]:
+        """Read connections for API nodes."""
+        from .connection import Connection
+
+        d = self._data_ref()
+        inputs = d.get("inputs", {})
+        if not isinstance(inputs, dict):
+            return {}
+
+        result: Dict[str, Any] = {}
+        # Get parent ApiFlow to look up class_types
+        for name, val in inputs.items():
+            if isinstance(val, list) and len(val) == 2:
+                ref_id, ref_slot = val
+                if isinstance(ref_id, str) and isinstance(ref_slot, int):
+                    result[name] = Connection(
+                        input_name=name,
+                        from_node_id=str(ref_id),
+                        from_output=ref_slot,
+                    )
+        return result
+
+    @property
+    def downstream(self) -> Dict[int, list]:
+        """Return downstream connections: {output_slot_index: [Connection(...)]}.
+
+        Shows which nodes consume each output of this node.
+        """
+        from .connection import Connection
+
+        if self.kind == "api":
+            return self._downstream_api()
+        return self._downstream_flow()
+
+    def _downstream_flow(self) -> Dict[int, list]:
+        """Read downstream for Flow nodes via the link table."""
+        from .connection import Connection
+
+        flow_data = self._get_flow_data()
+        node_dict = self._find_node_dict(flow_data)
+        node_id = node_dict.get("id")
+
+        # Build node_id → type map
+        type_map: Dict[int, str] = {}
+        for n in flow_data.get("nodes", []):
+            type_map[n.get("id", -1)] = n.get("type", "")
+
+        # Build link_id → link_entry map
+        link_map: Dict[int, list] = {}
+        for lnk in flow_data.get("links", []):
+            if isinstance(lnk, list) and len(lnk) >= 6:
+                link_map[lnk[0]] = lnk
+
+        result: Dict[int, list] = {}
+        for outp in node_dict.get("outputs", []):
+            slot_idx = outp.get("slot_index", 0)
+            connections = []
+            for lid in outp.get("links", []):
+                lnk = link_map.get(lid)
+                if lnk is None:
+                    continue
+                dst_id = lnk[3]
+                dst_slot = lnk[4]
+                # Find dst input name
+                dst_input_name = ""
+                for n in flow_data.get("nodes", []):
+                    if n.get("id") == dst_id:
+                        inputs = n.get("inputs", [])
+                        if dst_slot < len(inputs):
+                            dst_input_name = inputs[dst_slot].get("name", "")
+                        break
+                connections.append(Connection(
+                    input_name=dst_input_name,
+                    from_node_id=str(node_id),
+                    from_output=slot_idx,
+                    from_class_type=type_map.get(node_id, ""),
+                    to_node_id=str(dst_id),
+                    to_input_name=dst_input_name,
+                    to_class_type=type_map.get(dst_id, ""),
+                ))
+            if connections:
+                result[slot_idx] = connections
+        return result
+
+    def _downstream_api(self) -> Dict[int, list]:
+        """Read downstream for API nodes (reverse-scan all nodes)."""
+        from .connection import Connection
+
+        # For API nodes we'd need the parent ApiFlow to scan all nodes.
+        # Return empty for now — this is a best-effort feature.
+        return {}
+
+    # ------------------------------------------------------------------
+    # End connection management
+    # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
         w = self._widget_dict()

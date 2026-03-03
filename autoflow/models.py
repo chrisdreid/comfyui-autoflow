@@ -1787,6 +1787,37 @@ class Flow(dict):
     def load(cls, x: Union[str, Path, bytes, Dict[str, Any]]) -> "Flow":
         return cls(x)
 
+    @classmethod
+    def _from_raw(
+        cls,
+        data: Dict[str, Any],
+        *,
+        node_info: Optional[Union[Dict[str, Any], str, Path]] = None,
+        timeout: int = DEFAULT_HTTP_TIMEOUT_S,
+    ) -> "Flow":
+        """Construct a Flow from a raw dict, bypassing normal validation.
+
+        Used by Flow.create() to build empty flows.  The caller is responsible
+        for ensuring the dict has the required structure.
+        """
+        inst = dict.__new__(cls)
+        dict.__init__(inst, data)
+        inst.workflow_meta = data.get("extra") if isinstance(data.get("extra"), dict) else None
+        object.__setattr__(inst, "_autoflow_source", "created")
+        if node_info is not None:
+            from .convert import resolve_node_info_with_origin
+
+            oi_dict, _use_api, origin = resolve_node_info_with_origin(node_info, None, timeout, allow_env=True)
+            oi_obj = NodeInfo(oi_dict or {})
+            setattr(oi_obj, "_autoflow_origin", origin)
+            s = oi_obj.source
+            if isinstance(s, str) and s:
+                setattr(oi_obj, "_autoflow_source", s)
+            inst.node_info = oi_obj
+        else:
+            inst.node_info = None
+        return inst
+
     def to_json(self, indent: int = DEFAULT_JSON_INDENT, ensure_ascii: bool = DEFAULT_JSON_ENSURE_ASCII) -> str:
         return json.dumps(self, indent=indent, ensure_ascii=ensure_ascii) + "\n"
 
