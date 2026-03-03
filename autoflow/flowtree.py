@@ -596,9 +596,20 @@ class Flow(_MappingWrapper):
         ni_dict = _json.loads(_json.dumps(dict(ni)))
 
         if class_type not in ni_dict:
-            raise ValueError(
-                f"Unknown node class '{class_type}'. Not found in node_info."
-            )
+            # Accept spec objects from ni.CLIPTextEncode or ni.find()
+            addr = getattr(class_type, "_autoflow_addr", None)
+            if addr and addr in ni_dict:
+                class_type = addr
+            elif isinstance(class_type, str):
+                raise ValueError(
+                    f"Unknown node class '{class_type}'. Not found in node_info."
+                )
+            else:
+                raise ValueError(
+                    "Could not determine class_type from the provided object. "
+                    "Use ni.CLIPTextEncode (dot access on NodeInfo), ni.find(), "
+                    "or pass the string name directly."
+                )
         type_info = ni_dict[class_type]
 
         # ---- Build input slots (connection-only inputs) ----
@@ -954,7 +965,24 @@ class NodeInfo(_MappingWrapper):
         return getattr(self._oi, "source", None)
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._oi, name)
+        result = getattr(self._oi, name)
+        # Tag DictView results with the class_type so add_node() can resolve them
+        if isinstance(result, _legacy.DictView) and name in self._oi:
+            try:
+                object.__setattr__(result, "_autoflow_addr", name)
+            except (AttributeError, TypeError):
+                pass
+        return result
+
+    def __dir__(self) -> list:
+        """List all class_type names for tab completion."""
+        base = {"find", "fetch", "source", "load", "from_comfyui_modules",
+                "to_json", "keys", "values", "items", "get"}
+        try:
+            base.update(str(k) for k in self._oi.keys())
+        except Exception:
+            pass
+        return sorted(base)
 
     def __repr__(self) -> str:
         count = len(self._oi)
@@ -1220,14 +1248,17 @@ class NodeRef:
         self,
         input_name: str,
         src_node: "NodeRef",
-        output_name_or_index: Any = 0,
+        output_name_or_index: Any = None,
     ) -> None:
         """Connect an input on this node to an output on src_node.
 
         Args:
             input_name: Name of the input slot on this (destination) node.
             src_node: The source NodeRef to connect from.
-            output_name_or_index: Output slot on src_node — name (str) or index (int).
+            output_name_or_index: Output slot on src_node — name (str), index (int),
+                or None to auto-resolve by matching the input type against the
+                source node's outputs. Auto-resolve works when exactly one output
+                matches; raises ValueError if ambiguous.
         """
         if self.kind == "api":
             return self._connect_api(input_name, src_node, output_name_or_index)
@@ -1237,7 +1268,7 @@ class NodeRef:
         self,
         input_name: str,
         src_node: "NodeRef",
-        output_name_or_index: Any = 0,
+        output_name_or_index: Any = None,
     ) -> None:
         """Connect for workspace Flow nodes (link table surgery)."""
         flow_data = self._get_flow_data()
@@ -1263,7 +1294,29 @@ class NodeRef:
         src_slot_idx = None
         src_slot = None
         outputs = src_dict.get("outputs", [])
-        if isinstance(output_name_or_index, int):
+
+        if output_name_or_index is None:
+            # Auto-resolve: match input type against source outputs
+            input_type = dst_slot.get("type", "*")
+            matches = []
+            for i, outp in enumerate(outputs):
+                if outp.get("type") == input_type or input_type == "*" or outp.get("type") == "*":
+                    matches.append((i, outp))
+            if len(matches) == 1:
+                src_slot_idx, src_slot = matches[0]
+            elif len(matches) == 0:
+                raise ValueError(
+                    f"No output on {src_dict.get('type', '?')} matches input type "
+                    f"'{input_type}' (input '{input_name}'). "
+                    f"Available outputs: {[(s.get('name'), s.get('type')) for s in outputs]}"
+                )
+            else:
+                raise ValueError(
+                    f"Ambiguous: {len(matches)} outputs on {src_dict.get('type', '?')} "
+                    f"match type '{input_type}'. Specify output explicitly: "
+                    f"{[(s.get('name'), s.get('type')) for _, s in matches]}"
+                )
+        elif isinstance(output_name_or_index, int):
             if 0 <= output_name_or_index < len(outputs):
                 src_slot_idx = output_name_or_index
                 src_slot = outputs[output_name_or_index]
