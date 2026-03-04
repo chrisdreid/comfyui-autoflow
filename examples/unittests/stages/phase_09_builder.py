@@ -416,4 +416,130 @@ def run(collector: ResultCollector, **kwargs) -> None:
         return {"input": "get_input_default for KSampler", "output": f"seed={d}, steps={d2}, sampler={d4}", "result": "✓ defaults"}
     _run_test(collector, stage, "9.16", "get_input_default() returns correct defaults", t_9_16)
 
+    # -----------------------------------------------------------------------
+    # 9.17 — Slot Discovery: InputsView / OutputsView dict-like
+    # -----------------------------------------------------------------------
+    def t_9_17():
+        flow = Flow.create(node_info=ni)
+        ckpt = flow.add_node("CheckpointLoaderSimple")
+        ks = flow.add_node("KSampler", seed=42)
+
+        # InputsView
+        iv = ks.inputs
+        assert "model" in iv, "'model' not in inputs"
+        assert len(iv) >= 4, f"Expected >= 4 inputs, got {len(iv)}"
+        assert "model" in iv.keys()
+        slot = iv["model"]
+        assert slot.direction == "input"
+
+        # OutputsView
+        ov = ckpt.outputs
+        assert "MODEL" in ov
+        assert len(ov) == 3
+        assert "MODEL" in ov.keys()
+
+        # dir includes inputs/outputs
+        assert "inputs" in dir(ks)
+        assert "outputs" in dir(ks)
+
+        return {"input": "ks.inputs / ckpt.outputs", "output": f"inputs={len(iv)}, outputs={len(ov)}", "result": "✓ dict-like views"}
+    _run_test(collector, stage, "9.17", "Slot Discovery: InputsView/OutputsView dict-like", t_9_17)
+
+    # -----------------------------------------------------------------------
+    # 9.18 — Explicit >> wiring with SlotRef
+    # -----------------------------------------------------------------------
+    def t_9_18():
+        flow = Flow.create(node_info=ni)
+        ckpt = flow.add_node("CheckpointLoaderSimple")
+        ks = flow.add_node("KSampler", seed=42)
+
+        ckpt.outputs.MODEL >> ks.inputs.model
+        assert len(flow._flow["links"]) == 1
+        return {"input": "ckpt.outputs.MODEL >> ks.inputs.model", "output": "1 link", "result": "✓ explicit >>"}
+    _run_test(collector, stage, "9.18", "Explicit outputs >> inputs wiring", t_9_18)
+
+    # -----------------------------------------------------------------------
+    # 9.19 — << pull operator
+    # -----------------------------------------------------------------------
+    def t_9_19():
+        flow = Flow.create(node_info=ni)
+        ckpt = flow.add_node("CheckpointLoaderSimple")
+        ks = flow.add_node("KSampler", seed=42)
+
+        ks.inputs.model << ckpt  # auto-resolve
+        assert len(flow._flow["links"]) == 1
+
+        pos = flow.add_node("CLIPTextEncode", text="test")
+        pos.inputs.clip << ckpt.outputs.CLIP  # explicit
+        assert len(flow._flow["links"]) == 2
+        return {"input": "ks.inputs.model << ckpt", "output": "2 links", "result": "✓ << pull"}
+    _run_test(collector, stage, "9.19", "<< pull operator (auto + explicit)", t_9_19)
+
+    # -----------------------------------------------------------------------
+    # 9.20 — >> list fan-out + .connect()
+    # -----------------------------------------------------------------------
+    def t_9_20():
+        flow = Flow.create(node_info=ni)
+        ckpt = flow.add_node("CheckpointLoaderSimple")
+        pos = flow.add_node("CLIPTextEncode", text="a")
+        neg = flow.add_node("CLIPTextEncode", text="b")
+
+        ckpt.outputs.CLIP >> [pos.inputs.clip, neg.inputs.clip]
+        assert len(flow._flow["links"]) == 2
+
+        ks = flow.add_node("KSampler", seed=42)
+        ckpt.outputs.MODEL.connect(ks.inputs.model)
+        assert len(flow._flow["links"]) == 3
+        return {"input": ">> [list] + .connect()", "output": "3 links", "result": "✓ fan-out"}
+    _run_test(collector, stage, "9.20", ">> list fan-out + SlotRef.connect()", t_9_20)
+
+    # -----------------------------------------------------------------------
+    # 9.21 — Disconnect via operators and methods
+    # -----------------------------------------------------------------------
+    def t_9_21():
+        flow = Flow.create(node_info=ni)
+        ckpt = flow.add_node("CheckpointLoaderSimple")
+        ks = flow.add_node("KSampler", seed=42)
+        pos = flow.add_node("CLIPTextEncode", text="a")
+        neg = flow.add_node("CLIPTextEncode", text="b")
+
+        ckpt.outputs.MODEL >> ks.inputs.model
+        ckpt.outputs.CLIP >> [pos.inputs.clip, neg.inputs.clip]
+        assert len(flow._flow["links"]) == 3
+
+        # input << None
+        ks.inputs.model << None
+        assert len(flow._flow["links"]) == 2
+
+        # output.disconnect(specific)
+        ckpt.outputs.CLIP.disconnect(pos.inputs.clip)
+        assert len(flow._flow["links"]) == 1
+
+        # output >> None
+        ckpt.outputs.CLIP >> None
+        assert len(flow._flow["links"]) == 0
+
+        return {"input": "<< None, .disconnect(target), >> None", "output": "0 links", "result": "✓ all disconnect"}
+    _run_test(collector, stage, "9.21", "Disconnect via << None, >> None, .disconnect()", t_9_21)
+
+    # -----------------------------------------------------------------------
+    # 9.22 — Unified NodeRef from flow.nodes
+    # -----------------------------------------------------------------------
+    def t_9_22():
+        flow = Flow.create(node_info=ni)
+        ks = flow.add_node("KSampler", seed=42)
+        from_nodes = flow.nodes.KSampler
+
+        # Single node → should return NodeRef, not NodeSet
+        from autoflow.flowtree import NodeRef
+        assert isinstance(from_nodes, NodeRef), f"Expected NodeRef, got {type(from_nodes).__name__}"
+
+        # Both should have inputs/outputs
+        assert hasattr(from_nodes, "inputs")
+        assert hasattr(from_nodes, "outputs")
+        assert "model" in from_nodes.inputs
+
+        return {"input": "flow.nodes.KSampler (single)", "output": type(from_nodes).__name__, "result": "✓ unified NodeRef"}
+    _run_test(collector, stage, "9.22", "flow.nodes.X returns NodeRef for single match", t_9_22)
+
     _print_stage_summary(collector, stage)
