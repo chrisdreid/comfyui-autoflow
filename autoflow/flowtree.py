@@ -853,65 +853,103 @@ class Flow(_MappingWrapper):
 
     def connect(
         self,
-        src_path: str,
-        dst_path: str,
+        src: Any,
+        dst: Any,
     ) -> None:
-        """Connect nodes using path syntax.
+        """Connect nodes using SlotRef objects, path strings, or a mix.
 
         Args:
-            src_path: Source path as "NodeType/OutputName" or "NodeType[index]/OutputName".
-            dst_path: Destination path as "NodeType/InputName" or "NodeType[index]/InputName".
+            src: Source — a SlotRef (from node.outputs.X) or path string "NodeType/OutputName".
+            dst: Destination — a SlotRef (from node.inputs.X), a path string,
+                 or a list of SlotRefs/paths for fan-out.
 
         Examples:
+            # SlotRef objects (from node.inputs / node.outputs)
+            flow.connect(ckpt.outputs.MODEL, ks.inputs.model)
+            flow.connect(ckpt.outputs.CLIP, [pos.inputs.clip, neg.inputs.clip])
+
+            # Path strings
             flow.connect("CheckpointLoader/MODEL", "KSampler/model")
-            flow.connect("KSampler/LATENT", "VAEDecode/samples")
-            flow.connect("CheckpointLoader/CLIP", "CLIPTextEncode[0]/clip")
+
+            # Mix
+            flow.connect(ckpt.outputs.MODEL, "KSampler/model")
         """
-        def _resolve_path(path: str):
-            parts = path.split("/", 1)
-            if len(parts) != 2:
-                raise ValueError(
-                    f"Invalid path '{path}'. Expected 'NodeType/SlotName' "
-                    f"(e.g. 'KSampler/model')."
-                )
-            type_part, slot_name = parts
+        # Fan-out: if dst is a list, connect src to each
+        if isinstance(dst, (list, tuple)):
+            for d in dst:
+                self.connect(src, d)
+            return
 
-            # Parse optional index: "KSampler[0]" → ("KSampler", 0)
-            idx = None
-            if "[" in type_part and type_part.endswith("]"):
-                bracket_pos = type_part.index("[")
-                idx_str = type_part[bracket_pos + 1:-1]
-                type_part = type_part[:bracket_pos]
-                try:
-                    idx = int(idx_str)
-                except ValueError:
-                    raise ValueError(f"Invalid index in '{path}': '{idx_str}'")
+        # Resolve src
+        if isinstance(src, SlotRef):
+            src_node = src.node
+            output_name = src.name
+            # Ensure _flow is set
+            object.__setattr__(src_node, "_flow", self)
+        elif isinstance(src, str):
+            src_node, output_name = self._resolve_connect_path(src)
+        else:
+            raise TypeError(
+                f"src must be a SlotRef or path string, got {type(src).__name__}. "
+                f"Use: flow.connect(node.outputs.X, ...) or flow.connect('Type/Output', ...)"
+            )
 
-            matches = self.find(type=type_part)
-            if not matches:
-                raise ValueError(f"No node of type '{type_part}' found in flow.")
-            if idx is not None:
-                if idx >= len(matches):
-                    raise ValueError(
-                        f"Index {idx} out of range for '{type_part}' "
-                        f"(found {len(matches)} nodes)."
-                    )
-                node = matches[idx]
-            elif len(matches) == 1:
-                node = matches[0]
-            else:
-                raise ValueError(
-                    f"Ambiguous: {len(matches)} nodes of type '{type_part}'. "
-                    f"Use '{type_part}[0]/...' to disambiguate."
-                )
-            return node, slot_name
+        # Resolve dst
+        if isinstance(dst, SlotRef):
+            dst_node = dst.node
+            input_name = dst.name
+            object.__setattr__(dst_node, "_flow", self)
+        elif isinstance(dst, str):
+            dst_node, input_name = self._resolve_connect_path(dst)
+        else:
+            raise TypeError(
+                f"dst must be a SlotRef or path string, got {type(dst).__name__}. "
+                f"Use: flow.connect(..., node.inputs.Y) or flow.connect(..., 'Type/input')"
+            )
 
-        src_node, output_name = _resolve_path(src_path)
-        dst_node, input_name = _resolve_path(dst_path)
-        # Ensure _flow is set so connect() can do link table surgery
-        object.__setattr__(src_node, "_flow", self)
-        object.__setattr__(dst_node, "_flow", self)
         dst_node.connect(input_name, src_node, output_name)
+
+    def _resolve_connect_path(self, path: str):
+        """Resolve 'NodeType/SlotName' or 'NodeType[index]/SlotName' to (NodeRef, slot_name)."""
+        parts = path.split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(
+                f"Invalid path '{path}'. Expected 'NodeType/SlotName' "
+                f"(e.g. 'KSampler/model')."
+            )
+        type_part, slot_name = parts
+
+        # Parse optional index: "KSampler[0]" → ("KSampler", 0)
+        idx = None
+        if "[" in type_part and type_part.endswith("]"):
+            bracket_pos = type_part.index("[")
+            idx_str = type_part[bracket_pos + 1:-1]
+            type_part = type_part[:bracket_pos]
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                raise ValueError(f"Invalid index in '{path}': '{idx_str}'")
+
+        matches = self.find(type=type_part)
+        if not matches:
+            raise ValueError(f"No node of type '{type_part}' found in flow.")
+        if idx is not None:
+            if idx >= len(matches):
+                raise ValueError(
+                    f"Index {idx} out of range for '{type_part}' "
+                    f"(found {len(matches)} nodes)."
+                )
+            node = matches[idx]
+        elif len(matches) == 1:
+            node = matches[0]
+        else:
+            raise ValueError(
+                f"Ambiguous: {len(matches)} nodes of type '{type_part}'. "
+                f"Use '{type_part}[0]/...' to disambiguate."
+            )
+        # Ensure _flow is set
+        object.__setattr__(node, "_flow", self)
+        return node, slot_name
 
 
 class NodeInfo(_MappingWrapper):
@@ -1108,28 +1146,576 @@ class _CallableList(list):
 
 
 class SlotRef:
-    """Reference to a specific input slot on a node, enabling the >> operator.
+    """Reference to a specific slot on a node, enabling the >> operator.
 
-    Created by accessing a connection input name on a NodeRef:
-        slot = ks.model  # SlotRef(node=ks, name="model")
+    Created via:
+        ks.model            → SlotRef(node=ks, name="model", direction="input")
+        ks.inputs.model     → SlotRef(node=ks, name="model", direction="input")
+        ckpt.outputs.MODEL  → SlotRef(node=ckpt, name="MODEL", direction="output")
 
     Usage with >> operator:
-        ckpt >> ks.model     # connects ckpt's matching output to ks's model input
-        ckpt >> pos.clip     # connects ckpt's CLIP output to pos's clip input
+        ckpt >> ks.model                            # auto-resolve (shorthand)
+        ckpt.outputs.MODEL >> ks.inputs.model       # explicit
     """
 
-    __slots__ = ("node", "name")
+    __slots__ = ("node", "name", "direction", "slot_type")
 
-    def __init__(self, node: "NodeRef", name: str):
+    def __init__(self, node: "NodeRef", name: str, direction: str = "input", slot_type: str = ""):
         self.node = node
         self.name = name
+        self.direction = direction
+        self.slot_type = slot_type
+
+    def _get_connection_info(self) -> Optional[str]:
+        """Get current connection info for this slot."""
+        try:
+            flow = object.__getattribute__(self.node, "_flow")
+            if flow is None:
+                return None
+            flow_data = flow._flow
+            node_dict = self.node._find_node_dict(flow_data)
+
+            if self.direction == "input":
+                for inp in node_dict.get("inputs", []):
+                    if inp.get("name") == self.name:
+                        link_id = inp.get("link")
+                        if link_id is not None:
+                            for lnk in flow_data.get("links", []):
+                                if lnk[0] == link_id:
+                                    src_id = lnk[1]
+                                    src_slot = lnk[2]
+                                    for n in flow_data.get("nodes", []):
+                                        if n.get("id") == src_id:
+                                            src_type = n.get("type", "?")
+                                            outputs = n.get("outputs", [])
+                                            out_name = outputs[src_slot].get("name", "?") if src_slot < len(outputs) else "?"
+                                            return f"{src_type}.{out_name}"
+                        return None
+            else:  # output
+                for outp in node_dict.get("outputs", []):
+                    if outp.get("name") == self.name:
+                        links = outp.get("links", [])
+                        if links:
+                            targets = []
+                            for link_id in links:
+                                for lnk in flow_data.get("links", []):
+                                    if lnk[0] == link_id:
+                                        dst_id = lnk[3]
+                                        for n in flow_data.get("nodes", []):
+                                            if n.get("id") == dst_id:
+                                                dst_type = n.get("type", "?")
+                                                dst_inputs = n.get("inputs", [])
+                                                dst_name = dst_inputs[lnk[4]].get("name", "?") if lnk[4] < len(dst_inputs) else "?"
+                                                targets.append(f"{dst_type}.{dst_name}")
+                            return ", ".join(targets) if targets else None
+                        return None
+        except Exception:
+            return None
 
     def __repr__(self) -> str:
-        return f"SlotRef({self.node.type}.{self.name})"
+        import sys
+        use_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+        conn = self._get_connection_info()
+
+        type_str = f" [{self.slot_type}]" if self.slot_type else ""
+        if self.direction == "input":
+            if conn:
+                status = f"\033[32m← {conn}\033[0m" if use_color else f"← {conn}"
+            else:
+                status = "\033[90m(unconnected)\033[0m" if use_color else "(unconnected)"
+            return f"SlotRef({self.node.type}.{self.name}{type_str} {status})"
+        else:
+            if conn:
+                status = f"\033[32m→ {conn}\033[0m" if use_color else f"→ {conn}"
+            else:
+                status = "\033[90m(unconnected)\033[0m" if use_color else "(unconnected)"
+            return f"SlotRef({self.node.type}.{self.name}{type_str} {status})"
 
     def __rrshift__(self, src_node: "NodeRef") -> None:
-        """Handle: src_node >> this_slot"""
-        self.node.connect(self.name, src_node)
+        """Handle: src_node >> this_input_slot (auto-resolve output)."""
+        if self.direction == "input":
+            self.node.connect(self.name, src_node)
+        else:
+            raise TypeError(
+                f"Cannot use >> to push into an output slot. "
+                f"Use: source >> destination.inputs.{self.name}"
+            )
+
+    def __rshift__(self, other: Any) -> None:
+        """Handle: this_output_slot >> other_input_slot (or list for fan-out).
+
+        Special: output >> None disconnects all links from this output.
+        """
+        if self.direction != "output":
+            raise TypeError(
+                f"Left side of >> must be an output slot, got input '{self.name}'. "
+                f"Use: node.outputs.X >> other.inputs.Y"
+            )
+        # Disconnect: output >> None
+        if other is None:
+            self.disconnect()
+            return
+        # Fan-out: output >> [input1, input2, ...]
+        if isinstance(other, (list, tuple)):
+            for slot in other:
+                if not isinstance(slot, SlotRef) or slot.direction != "input":
+                    raise TypeError(
+                        f"Each item in the list must be an input SlotRef, got {type(slot).__name__}."
+                    )
+                slot.node.connect(slot.name, self.node, self.name)
+            return
+        if not isinstance(other, SlotRef) or other.direction != "input":
+            raise TypeError(
+                f"Right side of >> must be an input slot, list, or None. "
+                f"Use: node.outputs.X >> other.inputs.Y"
+            )
+        other.node.connect(other.name, self.node, self.name)
+
+    def __lshift__(self, src: Any) -> None:
+        """Handle: this_input_slot << source (pull-style connection).
+
+        Special: input << None disconnects this input.
+
+        Examples:
+            ks.inputs.model << ckpt                  # auto-resolve output
+            ks.inputs.model << ckpt.outputs.MODEL    # explicit output
+            ks.inputs.model << None                  # disconnect
+        """
+        if self.direction != "input":
+            raise TypeError(
+                f"Left side of << must be an input slot, got output '{self.name}'. "
+                f"Use: node.inputs.X << source"
+            )
+        # Disconnect: input << None
+        if src is None:
+            self.disconnect()
+            return
+        if isinstance(src, SlotRef):
+            if src.direction != "output":
+                raise TypeError(
+                    f"Right side of << must be a node, output slot, or None. "
+                    f"Got input '{src.name}'."
+                )
+            self.node.connect(self.name, src.node, src.name)
+        elif isinstance(src, NodeRef):
+            self.node.connect(self.name, src)
+        else:
+            raise TypeError(
+                f"Right side of << must be a node, output SlotRef, or None. "
+                f"Got {type(src).__name__}."
+            )
+
+    def connect(self, targets: Any) -> "SlotRef":
+        """Connect this output slot to one or more input slots.
+
+        Args:
+            targets: A single input SlotRef or a list of input SlotRefs.
+
+        Examples:
+            ckpt.outputs.CLIP.connect(pos.inputs.clip)
+            ckpt.outputs.CLIP.connect([pos.inputs.clip, neg.inputs.clip])
+
+        Returns self for chaining.
+        """
+        if self.direction != "output":
+            raise TypeError(
+                f"connect() is for output slots. "
+                f"For input slots, use: other_node >> this_node.inputs.{self.name}"
+            )
+        if isinstance(targets, (list, tuple)):
+            for t in targets:
+                if not isinstance(t, SlotRef) or t.direction != "input":
+                    raise TypeError(f"Each target must be an input SlotRef, got {type(t).__name__}.")
+                t.node.connect(t.name, self.node, self.name)
+        elif isinstance(targets, SlotRef) and targets.direction == "input":
+            targets.node.connect(targets.name, self.node, self.name)
+        else:
+            raise TypeError(
+                f"targets must be an input SlotRef or list of input SlotRefs. "
+                f"Use: node.outputs.X.connect(other.inputs.Y)"
+            )
+        return self
+
+    def disconnect(self, target: Optional["SlotRef"] = None) -> None:
+        """Disconnect this slot.
+
+        For input slots:
+            slot.disconnect()  — removes the one incoming connection.
+
+        For output slots:
+            slot.disconnect()             — removes ALL outgoing connections.
+            slot.disconnect(ks.inputs.model) — removes only the link to that input.
+
+        Examples:
+            ks.inputs.model.disconnect()
+            ckpt.outputs.MODEL.disconnect()
+            ckpt.outputs.MODEL.disconnect(ks.inputs.model)
+        """
+        flow = object.__getattribute__(self.node, "_flow")
+        if flow is None:
+            raise RuntimeError("SlotRef has no flow reference — cannot disconnect.")
+        flow_data = flow._flow
+        node_dict = self.node._find_node_dict(flow_data)
+
+        if self.direction == "input":
+            # Input: just delegate to NodeRef.disconnect
+            self.node.disconnect(self.name)
+        else:
+            # Output: find all links from this output slot
+            outputs = node_dict.get("outputs", [])
+            out_slot = None
+            out_idx = None
+            for i, outp in enumerate(outputs):
+                if outp.get("name") == self.name:
+                    out_slot = outp
+                    out_idx = i
+                    break
+            if out_slot is None:
+                return
+
+            link_ids = list(out_slot.get("links", []))
+            if not link_ids:
+                return
+
+            if target is not None:
+                # Disconnect specific target
+                if not isinstance(target, SlotRef) or target.direction != "input":
+                    raise TypeError("target must be an input SlotRef.")
+                target_dict = target.node._find_node_dict(flow_data)
+                target_id = target_dict.get("id")
+                # Find the link that connects to this specific target input
+                for link_id in link_ids:
+                    for lnk in flow_data.get("links", []):
+                        if lnk[0] == link_id and lnk[3] == target_id:
+                            # Verify input name matches
+                            dst_inputs = target_dict.get("inputs", [])
+                            if lnk[4] < len(dst_inputs) and dst_inputs[lnk[4]].get("name") == target.name:
+                                # Remove this specific link
+                                dst_inputs[lnk[4]]["link"] = None
+                                out_slot["links"].remove(link_id)
+                                flow_data["links"] = [
+                                    l for l in flow_data["links"]
+                                    if not (isinstance(l, list) and l[0] == link_id)
+                                ]
+                                return
+            else:
+                # Disconnect ALL targets from this output
+                for link_id in link_ids:
+                    for lnk in flow_data.get("links", []):
+                        if lnk[0] == link_id:
+                            dst_id = lnk[3]
+                            dst_slot_idx = lnk[4]
+                            for n in flow_data.get("nodes", []):
+                                if n.get("id") == dst_id:
+                                    dst_inputs = n.get("inputs", [])
+                                    if dst_slot_idx < len(dst_inputs):
+                                        dst_inputs[dst_slot_idx]["link"] = None
+                                    break
+                            break
+                out_slot["links"] = []
+                flow_data["links"] = [
+                    l for l in flow_data["links"]
+                    if not (isinstance(l, list) and l[0] in link_ids)
+                ]
+
+
+class InputsView:
+    """Dict-like view of a node's input slots.
+
+    Usage:
+        ks.inputs                     # concise: {model: ← Ckpt.MODEL, positive: ○}
+        ks.inputs.model               # → SlotRef (for >> and << wiring)
+        ks.inputs['model']            # → SlotRef (same)
+        dict(ks.inputs)               # → {name: SlotRef, ...}
+        ks.inputs.pop('model')        # disconnect + return SlotRef
+        del ks.inputs['model']        # disconnect
+        ks.inputs.status()            # full ANSI-colored status table
+    """
+
+    __slots__ = ("_node", "_names")
+
+    def __init__(self, node: "NodeRef"):
+        self._node = node
+        self._names: List[str] = []
+        try:
+            flow = object.__getattribute__(node, "_flow")
+            if flow is not None:
+                nd = node._find_node_dict(flow._flow)
+                self._names = [inp.get("name") for inp in nd.get("inputs", []) if inp.get("name")]
+        except Exception:
+            pass
+
+    def _make_slot(self, name: str) -> SlotRef:
+        slot_type = ""
+        try:
+            flow = object.__getattribute__(self._node, "_flow")
+            if flow is not None:
+                nd = self._node._find_node_dict(flow._flow)
+                for inp in nd.get("inputs", []):
+                    if inp.get("name") == name:
+                        slot_type = inp.get("type", "")
+                        break
+        except Exception:
+            pass
+        return SlotRef(self._node, name, direction="input", slot_type=slot_type)
+
+    def _conn_str(self, name: str) -> Optional[str]:
+        try:
+            flow = object.__getattribute__(self._node, "_flow")
+            if flow is None:
+                return None
+            fd = flow._flow
+            nd = self._node._find_node_dict(fd)
+            for inp in nd.get("inputs", []):
+                if inp.get("name") == name:
+                    lid = inp.get("link")
+                    if lid is not None:
+                        for lnk in fd.get("links", []):
+                            if lnk[0] == lid:
+                                for n in fd.get("nodes", []):
+                                    if n.get("id") == lnk[1]:
+                                        outs = n.get("outputs", [])
+                                        on = outs[lnk[2]].get("name", "?") if lnk[2] < len(outs) else "?"
+                                        return f"{n.get('type', '?')}.{on}"
+                    return None
+        except Exception:
+            return None
+
+    def __dir__(self) -> List[str]:
+        return sorted(set(self._names) | {"status", "pop", "keys", "values", "items"})
+
+    def __getattr__(self, name: str) -> SlotRef:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if name not in self._names:
+            raise AttributeError(f"No input '{name}' on {self._node.type}. Available: {self._names}")
+        return self._make_slot(name)
+
+    def __getitem__(self, name: str) -> SlotRef:
+        if name not in self._names:
+            raise KeyError(f"No input '{name}' on {self._node.type}. Available: {self._names}")
+        return self._make_slot(name)
+
+    def __delitem__(self, name: str) -> None:
+        if name not in self._names:
+            raise KeyError(f"No input '{name}' on {self._node.type}.")
+        self._make_slot(name).disconnect()
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._names
+
+    def __iter__(self):
+        return iter(self._names)
+
+    def __len__(self) -> int:
+        return len(self._names)
+
+    def keys(self) -> List[str]:
+        return list(self._names)
+
+    def values(self) -> List[SlotRef]:
+        return [self._make_slot(n) for n in self._names]
+
+    def items(self) -> List[Tuple[str, SlotRef]]:
+        return [(n, self._make_slot(n)) for n in self._names]
+
+    def pop(self, name: str) -> SlotRef:
+        """Disconnect input and return the SlotRef."""
+        if name not in self._names:
+            raise KeyError(f"No input '{name}' on {self._node.type}.")
+        slot = self._make_slot(name)
+        slot.disconnect()
+        return slot
+
+    def __repr__(self) -> str:
+        parts = []
+        for name in self._names:
+            c = self._conn_str(name)
+            parts.append(f"{name}: ← {c}" if c else f"{name}: ○")
+        return "{" + ", ".join(parts) + "}"
+
+    def status(self) -> str:
+        """Full ANSI-colored connection status table."""
+        import sys
+        use_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+        lines = [f"{self._node.type} inputs:"]
+        try:
+            flow = object.__getattribute__(self._node, "_flow")
+            if flow is not None:
+                fd = flow._flow
+                nd = self._node._find_node_dict(fd)
+                for inp in nd.get("inputs", []):
+                    name = inp.get("name", "?")
+                    itype = inp.get("type", "?")
+                    lid = inp.get("link")
+                    if lid is not None:
+                        si = "?"
+                        for lnk in fd.get("links", []):
+                            if lnk[0] == lid:
+                                for n in fd.get("nodes", []):
+                                    if n.get("id") == lnk[1]:
+                                        outs = n.get("outputs", [])
+                                        on = outs[lnk[2]].get("name", "?") if lnk[2] < len(outs) else "?"
+                                        si = f"{n.get('type', '?')}.{on}"
+                                break
+                        if use_color:
+                            lines.append(f"  \033[32m●\033[0m {name:<20} [{itype}] \033[32m← {si}\033[0m")
+                        else:
+                            lines.append(f"  ● {name:<20} [{itype}] ← {si}")
+                    else:
+                        if use_color:
+                            lines.append(f"  \033[90m○ {name:<20} [{itype}]\033[0m")
+                        else:
+                            lines.append(f"  ○ {name:<20} [{itype}]")
+        except Exception:
+            lines.append("  (no flow data)")
+        return "\n".join(lines)
+
+
+class OutputsView:
+    """Dict-like view of a node's output slots.
+
+    Usage:
+        ckpt.outputs                  # concise: {MODEL: → Ks.model, CLIP: ○}
+        ckpt.outputs.MODEL            # → SlotRef (for >> wiring)
+        ckpt.outputs['MODEL']         # → SlotRef (same)
+        dict(ckpt.outputs)            # → {name: SlotRef, ...}
+        ckpt.outputs.pop('MODEL')     # disconnect all + return SlotRef
+        del ckpt.outputs['MODEL']     # disconnect all from this output
+        ckpt.outputs.status()         # full ANSI-colored status table
+    """
+
+    __slots__ = ("_node", "_slots")
+
+    def __init__(self, node: "NodeRef"):
+        self._node = node
+        self._slots: List[Tuple[str, str]] = []
+        try:
+            flow = object.__getattribute__(node, "_flow")
+            if flow is not None:
+                nd = node._find_node_dict(flow._flow)
+                for outp in nd.get("outputs", []):
+                    self._slots.append((outp.get("name", ""), outp.get("type", "")))
+        except Exception:
+            pass
+
+    def _make_slot(self, name: str) -> SlotRef:
+        for sn, st in self._slots:
+            if sn == name:
+                return SlotRef(self._node, name, direction="output", slot_type=st)
+        raise KeyError(f"No output '{name}' on {self._node.type}.")
+
+    def _conn_str(self, name: str) -> Optional[str]:
+        try:
+            flow = object.__getattribute__(self._node, "_flow")
+            if flow is None:
+                return None
+            fd = flow._flow
+            nd = self._node._find_node_dict(fd)
+            for outp in nd.get("outputs", []):
+                if outp.get("name") == name:
+                    links = outp.get("links", [])
+                    if links:
+                        targets = []
+                        for lid in links:
+                            for lnk in fd.get("links", []):
+                                if lnk[0] == lid:
+                                    for n in fd.get("nodes", []):
+                                        if n.get("id") == lnk[3]:
+                                            di = n.get("inputs", [])
+                                            dn = di[lnk[4]].get("name", "?") if lnk[4] < len(di) else "?"
+                                            targets.append(f"{n.get('type', '?')}.{dn}")
+                        return ", ".join(targets) if targets else None
+                    return None
+        except Exception:
+            return None
+
+    def __dir__(self) -> List[str]:
+        return sorted(set(n for n, _ in self._slots) | {"status", "pop", "keys", "values", "items"})
+
+    def __getattr__(self, name: str) -> SlotRef:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        for sn, st in self._slots:
+            if sn == name:
+                return SlotRef(self._node, name, direction="output", slot_type=st)
+        raise AttributeError(f"No output '{name}' on {self._node.type}. Available: {[n for n, _ in self._slots]}")
+
+    def __getitem__(self, name: str) -> SlotRef:
+        return self._make_slot(name)
+
+    def __delitem__(self, name: str) -> None:
+        self._make_slot(name).disconnect()
+
+    def __contains__(self, name: str) -> bool:
+        return any(n == name for n, _ in self._slots)
+
+    def __iter__(self):
+        return iter(n for n, _ in self._slots)
+
+    def __len__(self) -> int:
+        return len(self._slots)
+
+    def keys(self) -> List[str]:
+        return [n for n, _ in self._slots]
+
+    def values(self) -> List[SlotRef]:
+        return [SlotRef(self._node, n, direction="output", slot_type=t) for n, t in self._slots]
+
+    def items(self) -> List[Tuple[str, SlotRef]]:
+        return [(n, SlotRef(self._node, n, direction="output", slot_type=t)) for n, t in self._slots]
+
+    def pop(self, name: str) -> SlotRef:
+        """Disconnect all links from output and return the SlotRef."""
+        slot = self._make_slot(name)
+        slot.disconnect()
+        return slot
+
+    def __repr__(self) -> str:
+        parts = []
+        for name, _ in self._slots:
+            c = self._conn_str(name)
+            parts.append(f"{name}: → {c}" if c else f"{name}: ○")
+        return "{" + ", ".join(parts) + "}"
+
+    def status(self) -> str:
+        """Full ANSI-colored connection status table."""
+        import sys
+        use_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+        lines = [f"{self._node.type} outputs:"]
+        try:
+            flow = object.__getattribute__(self._node, "_flow")
+            if flow is not None:
+                fd = flow._flow
+                nd = self._node._find_node_dict(fd)
+                for outp in nd.get("outputs", []):
+                    name = outp.get("name", "?")
+                    otype = outp.get("type", "?")
+                    links = outp.get("links", [])
+                    if links:
+                        targets = []
+                        for lid in links:
+                            for lnk in fd.get("links", []):
+                                if lnk[0] == lid:
+                                    for n in fd.get("nodes", []):
+                                        if n.get("id") == lnk[3]:
+                                            di = n.get("inputs", [])
+                                            dn = di[lnk[4]].get("name", "?") if lnk[4] < len(di) else "?"
+                                            targets.append(f"{n.get('type', '?')}.{dn}")
+                        ts = ", ".join(targets)
+                        if use_color:
+                            lines.append(f"  \033[32m●\033[0m {name:<20} [{otype}] \033[32m→ {ts}\033[0m")
+                        else:
+                            lines.append(f"  ● {name:<20} [{otype}] → {ts}")
+                    else:
+                        if use_color:
+                            lines.append(f"  \033[90m○ {name:<20} [{otype}]\033[0m")
+                        else:
+                            lines.append(f"  ○ {name:<20} [{otype}]")
+        except Exception:
+            lines.append("  (no flow data)")
+        return "\n".join(lines)
+
 
 class NodeRef:
     """
@@ -1252,6 +1838,12 @@ class NodeRef:
         if name.startswith("_"):
             raise AttributeError(name)
 
+        # Slot discovery: node.inputs / node.outputs
+        if name == "inputs":
+            return InputsView(self)
+        if name == "outputs":
+            return OutputsView(self)
+
         # Builder mode: return SlotRef for connection input names (enables >>)
         flow = object.__getattribute__(self, "_flow")
         if flow is not None:
@@ -1265,7 +1857,17 @@ class NodeRef:
                         from .connection import get_connection_input_names
                         conn_names = get_connection_input_names(node_type, ni_dict)
                         if name in conn_names:
-                            return SlotRef(self, name)
+                            # Get slot type for richer repr
+                            slot_type = ""
+                            try:
+                                nd = self._find_node_dict(flow._flow)
+                                for inp in nd.get("inputs", []):
+                                    if inp.get("name") == name:
+                                        slot_type = inp.get("type", "")
+                                        break
+                            except Exception:
+                                pass
+                            return SlotRef(self, name, direction="input", slot_type=slot_type)
             except Exception:
                 pass
 
@@ -1302,13 +1904,14 @@ class NodeRef:
         # Methods that actually work on NodeRef
         base = {"attrs", "to_dict", "unwrap", "tree",
                 "type", "title", "where", "meta",
+                "inputs", "outputs",
                 "connect", "disconnect", "connections", "downstream"}
         # Add widget names (these are readable/writable attributes)
         try:
             base.update(self._widget_dict().keys())
         except Exception:
             pass
-        # In builder mode, add connection input names (for >> operator)
+        # In builder mode, add connection input names (for >> shorthand)
         flow = object.__getattribute__(self, "_flow")
         if flow is not None:
             try:

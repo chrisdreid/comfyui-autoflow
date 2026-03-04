@@ -215,6 +215,150 @@ def main():
         print(f"  ❌ {e}")
         failed += 1
 
+    # ── Test 9: node.inputs / node.outputs tab completion ──────────────────
+    print("\n═══ Test 9: Slot Discovery (inputs/outputs) ═══")
+    try:
+        flow9 = Flow.create(node_info=ni)
+        ckpt9 = flow9.add_node("CheckpointLoaderSimple")
+        ks9 = flow9.add_node("KSampler")
+
+        inp_dir = dir(ks9.inputs)
+        out_dir = dir(ckpt9.outputs)
+        assert "model" in inp_dir, f"'model' not in ks.inputs dir: {inp_dir}"
+        assert "MODEL" in out_dir, f"'MODEL' not in ckpt.outputs dir: {out_dir}"
+        assert "inputs" in dir(ks9), "'inputs' not in dir(ks)"
+        assert "outputs" in dir(ks9), "'outputs' not in dir(ks)"
+        print(f"  ks.inputs dir: {inp_dir}")
+        print(f"  ckpt.outputs dir: {out_dir}")
+        print(f"  ✅ Slot Discovery works")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        failed += 1
+
+    # ── Test 10: explicit outputs >> inputs ───────────────────────────────
+    print("\n═══ Test 10: ckpt.outputs.MODEL >> ks.inputs.model ═══")
+    try:
+        flow10 = Flow.create(node_info=ni)
+        ckpt10 = flow10.add_node("CheckpointLoaderSimple")
+        ks10 = flow10.add_node("KSampler")
+        ckpt10.outputs.MODEL >> ks10.inputs.model
+        assert len(flow10._flow["links"]) == 1
+        print(f"  ✅ Explicit outputs >> inputs works")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        failed += 1
+
+    # ── Test 11: flow.connect() with SlotRef + fan-out ────────────────────
+    print("\n═══ Test 11: flow.connect() with SlotRef fan-out ═══")
+    try:
+        flow11 = Flow.create(node_info=ni)
+        ckpt11 = flow11.add_node("CheckpointLoaderSimple")
+        pos11 = flow11.add_node("CLIPTextEncode", text="a")
+        neg11 = flow11.add_node("CLIPTextEncode", text="b")
+
+        # Fan-out: CLIP to both CLIPTextEncode nodes
+        flow11.connect(ckpt11.outputs.CLIP, [pos11.inputs.clip, neg11.inputs.clip])
+        assert len(flow11._flow["links"]) == 2, f"Expected 2 links, got {len(flow11._flow['links'])}"
+        print(f"  ✅ Fan-out works: 1 output → 2 inputs")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        failed += 1
+
+    # ── Test 12: << pull operator ─────────────────────────────────────────
+    print("\n═══ Test 12: << pull operator ═══")
+    try:
+        flow12 = Flow.create(node_info=ni)
+        ckpt12 = flow12.add_node("CheckpointLoaderSimple")
+        ks12 = flow12.add_node("KSampler")
+        pos12 = flow12.add_node("CLIPTextEncode", text="test")
+
+        # Pull: input << source_node (auto-resolve)
+        ks12.inputs.model << ckpt12
+        assert len(flow12._flow["links"]) == 1
+
+        # Pull: input << source.outputs.OUTPUT (explicit)
+        pos12.inputs.clip << ckpt12.outputs.CLIP
+        assert len(flow12._flow["links"]) == 2
+
+        print(f"  ✅ << pull operator works (auto + explicit)")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        failed += 1
+
+    # ── Test 13: >> list fan-out + .connect() ─────────────────────────────
+    print("\n═══ Test 13: >> list fan-out + .connect() ═══")
+    try:
+        flow13 = Flow.create(node_info=ni)
+        ckpt13 = flow13.add_node("CheckpointLoaderSimple")
+        pos13 = flow13.add_node("CLIPTextEncode", text="a")
+        neg13 = flow13.add_node("CLIPTextEncode", text="b")
+
+        # >> with list
+        ckpt13.outputs.CLIP >> [pos13.inputs.clip, neg13.inputs.clip]
+        assert len(flow13._flow["links"]) == 2
+
+        # .connect() on output slot
+        ks13 = flow13.add_node("KSampler")
+        vae13 = flow13.add_node("VAEDecode")
+        ckpt13.outputs.MODEL.connect(ks13.inputs.model)
+        ckpt13.outputs.VAE.connect(vae13.inputs.vae)
+        assert len(flow13._flow["links"]) == 4
+
+        print(f"  ✅ >> [list] + .connect() work ({len(flow13._flow['links'])} links)")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        failed += 1
+
+    # ── Test 14: disconnect via .disconnect(), << None, >> None ───────────
+    print("\n═══ Test 14: disconnect ═══")
+    try:
+        flow14 = Flow.create(node_info=ni)
+        ckpt14 = flow14.add_node("CheckpointLoaderSimple")
+        ks14 = flow14.add_node("KSampler")
+        pos14 = flow14.add_node("CLIPTextEncode", text="a")
+        neg14 = flow14.add_node("CLIPTextEncode", text="b")
+
+        # Connect everything first
+        ckpt14.outputs.MODEL >> ks14.inputs.model
+        ckpt14.outputs.CLIP >> [pos14.inputs.clip, neg14.inputs.clip]
+        assert len(flow14._flow["links"]) == 3
+
+        # 1. input.disconnect()
+        ks14.inputs.model.disconnect()
+        assert len(flow14._flow["links"]) == 2
+        print(f"  ✅ input.disconnect() → 2 links remain")
+
+        # Reconnect for next test
+        ckpt14.outputs.MODEL >> ks14.inputs.model
+        assert len(flow14._flow["links"]) == 3
+
+        # 2. input << None
+        ks14.inputs.model << None
+        assert len(flow14._flow["links"]) == 2
+        print(f"  ✅ input << None → 2 links remain")
+
+        # 3. output.disconnect(specific_target)
+        ckpt14.outputs.CLIP.disconnect(pos14.inputs.clip)
+        assert len(flow14._flow["links"]) == 1
+        print(f"  ✅ output.disconnect(target) → 1 link remains")
+
+        # 4. output >> None (disconnect all)
+        ckpt14.outputs.CLIP >> None
+        assert len(flow14._flow["links"]) == 0
+        print(f"  ✅ output >> None → 0 links remain")
+
+        print(f"  ✅ All disconnect patterns work")
+        passed += 1
+    except Exception as e:
+        print(f"  ❌ {e}")
+        import traceback; traceback.print_exc()
+        failed += 1
+
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n{'═' * 50}")
     print(f"  {passed} passed, {failed} failed")
