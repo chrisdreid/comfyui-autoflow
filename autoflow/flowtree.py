@@ -838,6 +838,68 @@ class Flow(_MappingWrapper):
             for row, n in enumerate(group):
                 n["pos"] = [d * spacing_x, row * spacing_y]
 
+    def connect(
+        self,
+        src_path: str,
+        dst_path: str,
+    ) -> None:
+        """Connect nodes using path syntax.
+
+        Args:
+            src_path: Source path as "NodeType/OutputName" or "NodeType[index]/OutputName".
+            dst_path: Destination path as "NodeType/InputName" or "NodeType[index]/InputName".
+
+        Examples:
+            flow.connect("CheckpointLoader/MODEL", "KSampler/model")
+            flow.connect("KSampler/LATENT", "VAEDecode/samples")
+            flow.connect("CheckpointLoader/CLIP", "CLIPTextEncode[0]/clip")
+        """
+        def _resolve_path(path: str):
+            parts = path.split("/", 1)
+            if len(parts) != 2:
+                raise ValueError(
+                    f"Invalid path '{path}'. Expected 'NodeType/SlotName' "
+                    f"(e.g. 'KSampler/model')."
+                )
+            type_part, slot_name = parts
+
+            # Parse optional index: "KSampler[0]" → ("KSampler", 0)
+            idx = None
+            if "[" in type_part and type_part.endswith("]"):
+                bracket_pos = type_part.index("[")
+                idx_str = type_part[bracket_pos + 1:-1]
+                type_part = type_part[:bracket_pos]
+                try:
+                    idx = int(idx_str)
+                except ValueError:
+                    raise ValueError(f"Invalid index in '{path}': '{idx_str}'")
+
+            matches = self.find(type=type_part)
+            if not matches:
+                raise ValueError(f"No node of type '{type_part}' found in flow.")
+            if idx is not None:
+                if idx >= len(matches):
+                    raise ValueError(
+                        f"Index {idx} out of range for '{type_part}' "
+                        f"(found {len(matches)} nodes)."
+                    )
+                node = matches[idx]
+            elif len(matches) == 1:
+                node = matches[0]
+            else:
+                raise ValueError(
+                    f"Ambiguous: {len(matches)} nodes of type '{type_part}'. "
+                    f"Use '{type_part}[0]/...' to disambiguate."
+                )
+            return node, slot_name
+
+        src_node, output_name = _resolve_path(src_path)
+        dst_node, input_name = _resolve_path(dst_path)
+        # Ensure _flow is set so connect() can do link table surgery
+        object.__setattr__(src_node, "_flow", self)
+        object.__setattr__(dst_node, "_flow", self)
+        dst_node.connect(input_name, src_node, output_name)
+
 
 class NodeInfo(_MappingWrapper):
     def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.NodeInfo]] = None, **kwargs: Any):
@@ -1032,6 +1094,30 @@ class _CallableList(list):
         return self
 
 
+class SlotRef:
+    """Reference to a specific input slot on a node, enabling the >> operator.
+
+    Created by accessing a connection input name on a NodeRef:
+        slot = ks.model  # SlotRef(node=ks, name="model")
+
+    Usage with >> operator:
+        ckpt >> ks.model     # connects ckpt's matching output to ks's model input
+        ckpt >> pos.clip     # connects ckpt's CLIP output to pos's clip input
+    """
+
+    __slots__ = ("node", "name")
+
+    def __init__(self, node: "NodeRef", name: str):
+        self.node = node
+        self.name = name
+
+    def __repr__(self) -> str:
+        return f"SlotRef({self.node.type}.{self.name})"
+
+    def __rrshift__(self, src_node: "NodeRef") -> None:
+        """Handle: src_node >> this_slot"""
+        self.node.connect(self.name, src_node)
+
 class NodeRef:
     """
     Wrap a single legacy proxy (FlowNodeProxy or NodeProxy) and provide path metadata.
@@ -1152,6 +1238,24 @@ class NodeRef:
             return _legacy.DictView(m)
         if name.startswith("_"):
             raise AttributeError(name)
+
+        # Builder mode: return SlotRef for connection input names (enables >>)
+        flow = object.__getattribute__(self, "_flow")
+        if flow is not None:
+            try:
+                ni = getattr(flow._flow, "node_info", None)
+                if ni is not None:
+                    import json as _json
+                    ni_dict = _json.loads(_json.dumps(dict(ni)))
+                    node_type = self.type
+                    if node_type in ni_dict:
+                        from .connection import get_connection_input_names
+                        conn_names = get_connection_input_names(node_type, ni_dict)
+                        if name in conn_names:
+                            return SlotRef(self, name)
+            except Exception:
+                pass
+
         return getattr(self._p, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -1646,6 +1750,27 @@ class NodeSet:
             raise IndexError("NodeSet is empty")
         return self._nodes[0]
 
+    def connect(self, input_name: str, src_node: "NodeRef", output_name_or_index: Any = None) -> None:
+        """Forward connect to the single node in this set.
+
+        Raises ValueError if the set has more than one node — use [index] to pick one.
+        """
+        if len(self._nodes) != 1:
+            raise ValueError(
+                f"Cannot connect on NodeSet with {len(self._nodes)} nodes. "
+                f"Use [index] to select one, e.g. flow.nodes.KSampler[0].connect(...)"
+            )
+        self._nodes[0].connect(input_name, src_node, output_name_or_index)
+
+    def disconnect(self, input_name: str) -> None:
+        """Forward disconnect to the single node in this set."""
+        if len(self._nodes) != 1:
+            raise ValueError(
+                f"Cannot disconnect on NodeSet with {len(self._nodes)} nodes. "
+                f"Use [index] to select one."
+            )
+        self._nodes[0].disconnect(input_name)
+
     def attrs(self, *, mode: str = "union") -> List[str]:
         if not self._nodes:
             return []
@@ -1858,17 +1983,18 @@ class FlowTreeNodesView:
         for i, (idx, n) in enumerate(matches):
             p = _legacy.FlowNodeProxy(n, idx, flow)
             object.__setattr__(p, "_autoflow_addr", str(n.get("id", idx)))
-            refs.append(
-                NodeRef(
-                    p,
-                    kind="flow",
-                    addr=str(n.get("id", idx)),
-                    group=name,
-                    index=i,
-                    dotpath=f"nodes.{name}[{i}]",
-                    dictpath=["nodes", idx],
-                )
+            ref = NodeRef(
+                p,
+                kind="flow",
+                addr=str(n.get("id", idx)),
+                group=name,
+                index=i,
+                dotpath=f"nodes.{name}[{i}]",
+                dictpath=["nodes", idx],
             )
+            # Set _flow so connect/disconnect/>> work on these NodeRefs
+            object.__setattr__(ref, "_flow", self._flowtree)
+            refs.append(ref)
         return NodeSet(refs, kind="flow", set_path=f"nodes.{name}", set_dictpath=["nodes", name])
 
     def by_path(self, addr: str) -> NodeRef:

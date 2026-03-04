@@ -51,15 +51,28 @@ def _is_connection_only_input(spec: list) -> bool:
     - [TYPE_NAME]                           — single string, no options
     - [TYPE_NAME, {"tooltip": "..."}]       — string + tooltip-only dict
     - [TYPE_NAME, {}]                       — string + empty dict
+    - Any input with forceInput: true       — widget forced to connection slot
 
-    Everything else is a widget (has defaults, choices, constraints, etc.).
+    NOT connection-only (these are widgets):
+    - ["COMBO", {"options": [...]}]         — new-style combo widget
+    - [[choice1, choice2, ...], {...}]      — classic combo widget
+    - [TYPE, {"default": val, ...}]         — scalar widget
     """
     if not isinstance(spec, list) or len(spec) == 0:
         return False
+
+    # forceInput: true → always a connection, even if it looks like a widget
+    if len(spec) >= 2 and isinstance(spec[1], dict) and spec[1].get("forceInput"):
+        return True
+
     l = len(spec)
     if l == 1 and isinstance(spec[0], str):
-        return True
+        # "COMBO" alone is ambiguous but treat as connection (no options provided)
+        return spec[0] != "COMBO"
     if l == 2 and isinstance(spec[0], str) and isinstance(spec[1], dict):
+        # "COMBO" with options → widget, not connection
+        if spec[0] == "COMBO":
+            return False
         opts = spec[1]
         if not opts or (len(opts) == 1 and "tooltip" in opts):
             return True
@@ -197,7 +210,16 @@ def get_input_default(
             return None
         if _is_connection_only_input(spec):
             return None
-        # Combo widget: [[choice1, choice2, ...], {...}]
+        # New-style COMBO: ["COMBO", {"options": [...], "default": "..."}]
+        if isinstance(spec[0], str) and spec[0] == "COMBO":
+            if len(spec) >= 2 and isinstance(spec[1], dict):
+                opts = spec[1]
+                if "default" in opts:
+                    return opts["default"]
+                options = opts.get("options", [])
+                return options[0] if options else None
+            return None
+        # Classic combo widget: [[choice1, choice2, ...], {...}]
         if isinstance(spec[0], list) and len(spec[0]) > 0:
             return spec[0][0]
         # Scalar widget with default: [TYPE, {"default": val, ...}]
