@@ -45,7 +45,7 @@ n_links = len(flow._flow["links"])
 print(f"Links in memory: {n_links}")
 
 # Save and inspect
-out_path = os.path.join(os.path.dirname(__file__), "debug_connections.json")
+out_path =  "debug_connections.json"
 flow.auto_layout()
 flow.save(out_path)
 print(f"Saved to: {out_path}")

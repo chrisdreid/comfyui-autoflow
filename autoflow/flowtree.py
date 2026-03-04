@@ -408,6 +408,19 @@ class Flow(_MappingWrapper):
                 if isinstance(s, str) and s:
                     setattr(oi_obj, "_autoflow_source", s)
                 kwargs["node_info"] = oi_obj
+        # When no flow data is provided, inject a builder skeleton so
+        # add_node() / connect() / >> / save() all work out of the box.
+        if x is None:
+            x = {
+                "last_node_id": 0,
+                "last_link_id": 0,
+                "nodes": [],
+                "links": [],
+                "groups": [],
+                "config": {},
+                "extra": {},
+                "version": 0.4,
+            }
         f = x if isinstance(x, _legacy.Flow) else _legacy.Flow(x, **kwargs)
         self._flow = f
         self._data = f
@@ -1286,12 +1299,30 @@ class NodeRef:
             return self.unwrap()[key]
 
     def __dir__(self) -> List[str]:
-        base = {"attrs", "choices", "tooltip", "spec", "tree", "to_dict", "unwrap",
-                "type", "title", "where", "meta"}
+        # Methods that actually work on NodeRef
+        base = {"attrs", "to_dict", "unwrap", "tree",
+                "type", "title", "where", "meta",
+                "connect", "disconnect", "connections", "downstream"}
+        # Add widget names (these are readable/writable attributes)
         try:
             base.update(self._widget_dict().keys())
         except Exception:
             pass
+        # In builder mode, add connection input names (for >> operator)
+        flow = object.__getattribute__(self, "_flow")
+        if flow is not None:
+            try:
+                ni = getattr(flow._flow, "node_info", None)
+                if ni is not None:
+                    import json as _json
+                    ni_dict = _json.loads(_json.dumps(dict(ni)))
+                    node_type = self.type
+                    if node_type in ni_dict:
+                        from .connection import get_connection_input_names
+                        conn_names = get_connection_input_names(node_type, ni_dict)
+                        base.update(conn_names)
+            except Exception:
+                pass
         return sorted(base)
 
     def _widget_names(self) -> List[str]:
