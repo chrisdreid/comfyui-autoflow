@@ -1528,11 +1528,8 @@ class InputsView:
         return slot
 
     def __repr__(self) -> str:
-        parts = []
-        for name in self._names:
-            c = self._conn_str(name)
-            parts.append(f"{name}: ← {c}" if c else f"{name}: ○")
-        return "{" + ", ".join(parts) + "}"
+        d = {name: self._conn_str(name) for name in self._names}
+        return repr(d)
 
     def status(self) -> str:
         """Full ANSI-colored connection status table."""
@@ -1672,11 +1669,8 @@ class OutputsView:
         return slot
 
     def __repr__(self) -> str:
-        parts = []
-        for name, _ in self._slots:
-            c = self._conn_str(name)
-            parts.append(f"{name}: → {c}" if c else f"{name}: ○")
-        return "{" + ", ".join(parts) + "}"
+        d = {name: self._conn_str(name) for name in self.keys()}
+        return repr(d)
 
     def status(self) -> str:
         """Full ANSI-colored connection status table."""
@@ -2601,7 +2595,7 @@ class FlowTreeNodesView:
             out[nid] = self[i]
         return out
 
-    def __getattr__(self, name: str) -> NodeSet:
+    def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
         flow = self._flowtree._flow
@@ -2629,6 +2623,9 @@ class FlowTreeNodesView:
             # Set _flow so connect/disconnect/>> work on these NodeRefs
             object.__setattr__(ref, "_flow", self._flowtree)
             refs.append(ref)
+        # Single node → return NodeRef directly (same type as add_node())
+        if len(refs) == 1:
+            return refs[0]
         return NodeSet(refs, kind="flow", set_path=f"nodes.{name}", set_dictpath=["nodes", name])
 
     def by_path(self, addr: str) -> NodeRef:
