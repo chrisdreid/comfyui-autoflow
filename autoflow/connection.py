@@ -14,6 +14,11 @@ import dataclasses
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 
+def _is_dict_like(x: Any) -> bool:
+    """True for dict, DictView, or any Mapping-like object."""
+    return hasattr(x, 'get') and hasattr(x, 'items')
+
+
 @dataclasses.dataclass
 class Connection:
     """Represents a single wired connection between two nodes.
@@ -58,18 +63,18 @@ def _is_connection_only_input(spec: list) -> bool:
     - [[choice1, choice2, ...], {...}]      — classic combo widget
     - [TYPE, {"default": val, ...}]         — scalar widget
     """
-    if not isinstance(spec, list) or len(spec) == 0:
+    if not isinstance(spec, (list, tuple)) or len(spec) == 0:
         return False
 
     # forceInput: true → always a connection, even if it looks like a widget
-    if len(spec) >= 2 and isinstance(spec[1], dict) and spec[1].get("forceInput"):
+    if len(spec) >= 2 and _is_dict_like(spec[1]) and spec[1].get("forceInput"):
         return True
 
     l = len(spec)
     if l == 1 and isinstance(spec[0], str):
         # "COMBO" alone is ambiguous but treat as connection (no options provided)
         return spec[0] != "COMBO"
-    if l == 2 and isinstance(spec[0], str) and isinstance(spec[1], dict):
+    if l == 2 and isinstance(spec[0], str) and _is_dict_like(spec[1]):
         # "COMBO" with options → widget, not connection
         if spec[0] == "COMBO":
             return False
@@ -102,16 +107,16 @@ def get_connection_input_names(
         raise KeyError(f"Node class '{class_type}' not found in node_info")
 
     inputs_def = type_info.get("input", {})
-    if not isinstance(inputs_def, dict):
+    if not _is_dict_like(inputs_def):
         return []
 
     connection_names: List[str] = []
     for section in ["required", "optional"]:
         section_inputs = inputs_def.get(section, {})
-        if not isinstance(section_inputs, dict):
+        if not _is_dict_like(section_inputs):
             continue
         for name, spec in section_inputs.items():
-            if not isinstance(spec, list) or len(spec) == 0:
+            if not isinstance(spec, (list, tuple)) or len(spec) == 0:
                 continue
             if _is_connection_only_input(spec):
                 connection_names.append(name)
@@ -169,13 +174,13 @@ def get_all_input_names(
         raise KeyError(f"Node class '{class_type}' not found in node_info")
 
     inputs_def = type_info.get("input", {})
-    if not isinstance(inputs_def, dict):
+    if not _is_dict_like(inputs_def):
         return []
 
     names: List[str] = []
     for section in ["required", "optional"]:
         section_inputs = inputs_def.get(section, {})
-        if not isinstance(section_inputs, dict):
+        if not _is_dict_like(section_inputs):
             continue
         for name in section_inputs:
             names.append(name)
@@ -196,23 +201,23 @@ def get_input_default(
         return None
 
     inputs_def = type_info.get("input", {})
-    if not isinstance(inputs_def, dict):
+    if not _is_dict_like(inputs_def):
         return None
 
     for section in ["required", "optional"]:
         section_inputs = inputs_def.get(section, {})
-        if not isinstance(section_inputs, dict):
+        if not _is_dict_like(section_inputs):
             continue
         if input_name not in section_inputs:
             continue
         spec = section_inputs[input_name]
-        if not isinstance(spec, list) or len(spec) == 0:
+        if not isinstance(spec, (list, tuple)) or len(spec) == 0:
             return None
         if _is_connection_only_input(spec):
             return None
         # New-style COMBO: ["COMBO", {"options": [...], "default": "..."}]
         if isinstance(spec[0], str) and spec[0] == "COMBO":
-            if len(spec) >= 2 and isinstance(spec[1], dict):
+            if len(spec) >= 2 and _is_dict_like(spec[1]):
                 opts = spec[1]
                 if "default" in opts:
                     return opts["default"]
@@ -220,10 +225,10 @@ def get_input_default(
                 return options[0] if options else None
             return None
         # Classic combo widget: [[choice1, choice2, ...], {...}]
-        if isinstance(spec[0], list) and len(spec[0]) > 0:
+        if isinstance(spec[0], (list, tuple)) and len(spec[0]) > 0:
             return spec[0][0]
         # Scalar widget with default: [TYPE, {"default": val, ...}]
-        if len(spec) >= 2 and isinstance(spec[1], dict):
+        if len(spec) >= 2 and _is_dict_like(spec[1]):
             return spec[1].get("default")
         return None
     return None

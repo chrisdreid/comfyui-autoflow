@@ -7,7 +7,7 @@ ComfyUI
 ██╔══██║██║   ██║   ██║   ██║   ██║██╔══╝  ██║     ██║   ██║██║███╗██║
 ██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║     ███████╗╚██████╔╝╚███╔███╔╝
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ 
-                                                       version: 1.4.5
+                                                       version: 1.4.6
 ```
 
 [![PyPI version](https://img.shields.io/pypi/v/comfyui-autoflow?color=blue)](https://pypi.org/project/comfyui-autoflow/)
