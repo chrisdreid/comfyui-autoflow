@@ -470,7 +470,32 @@ class Flow(_MappingWrapper):
     def convert_with_errors(self, *args: Any, **kwargs: Any):
         return self._flow.convert_with_errors(*args, **kwargs)
 
-    def submit(self, *args: Any, **kwargs: Any):
+    def submit(self, *args: Any, embed_workflow: bool = True, **kwargs: Any):
+        """Submit this flow to ComfyUI for rendering.
+
+        By default, embeds the workspace workflow in extra_pnginfo so
+        ComfyUI stores it in output PNG metadata.
+
+        Args:
+            embed_workflow: If True (default), inject the workspace JSON into
+                extra_data.extra_pnginfo.workflow so ComfyUI embeds it in
+                output PNGs. Same data as flow.save() would write.
+        """
+        if embed_workflow:
+            import json as _json
+            # Build a clean serializable copy (same as flow.save() output)
+            flow_dict = _json.loads(_json.dumps(dict(self._flow), default=str))
+            # Strip internal-only keys that aren't part of the workflow file
+            flow_dict.pop("node_info", None)
+
+            extra = kwargs.get("extra") or {}
+            extra_data = extra.get("extra_data") or {}
+            pnginfo = extra_data.get("extra_pnginfo") or {}
+            pnginfo["workflow"] = flow_dict
+            extra_data["extra_pnginfo"] = pnginfo
+            extra["extra_data"] = extra_data
+            kwargs["extra"] = extra
+
         return self._flow.submit(*args, **kwargs)
 
     def execute(
