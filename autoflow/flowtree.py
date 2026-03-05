@@ -986,14 +986,9 @@ class Flow(_MappingWrapper):
         ds = extra.setdefault("ds", {})
         ds["offset"] = list(value)
 
-    # ------------------------------------------------------------------
-    # Extra metadata
-    # ------------------------------------------------------------------
 
-    @property
-    def extra(self) -> Dict[str, Any]:
-        """Flow-level extra metadata dict (frontend version, extensions, etc.)."""
-        return self._flow.setdefault("extra", {})
+    # Note: flow.extra already falls through to the Workflow layer which
+    # returns a DictView with dot-access support (e.g., flow.extra.ds).
 
     # ------------------------------------------------------------------
     # Execution order

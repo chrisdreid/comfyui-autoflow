@@ -794,10 +794,11 @@ def run(collector: ResultCollector, **kwargs) -> None:
         flow.canvas_offset = (100, 200)
         assert flow.canvas_offset == (100, 200)
 
-        # Extra metadata
-        assert isinstance(flow.extra, dict)
-        flow.extra["test_key"] = "test_val"
-        assert flow.extra["test_key"] == "test_val"
+        # Extra metadata (DictView with dot access)
+        extra = flow.extra
+        assert extra is not None
+        extra["test_key"] = "test_val"
+        assert extra["test_key"] == "test_val"
 
         # Compute execution order
         flow.compute_order()
