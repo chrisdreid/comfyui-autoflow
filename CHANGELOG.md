@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Widget values scramble on `__setattr__`** — `FlowNodeProxy.__setattr__` now updates values in-place in the original `widgets_values` array, preserving frontend-only values like `control_after_generate` that aren't in server `object_info`
+- **`submit(wait=True)` hangs after job completes** — history poll loop stopped re-fetching once ComfyUI returned `{}` because `if history is None` was always False; now re-polls until `prompt_id` appears in history
 - **`embed_workflow` serialization** — uses `to_json()` path instead of `dict()` + `json.dumps(default=str)`, avoiding stringification of custom types
 
 ### Changed
