@@ -30,8 +30,8 @@ def run(collector: ResultCollector, **kwargs) -> None:
     print(f"  {stage}")
     print(f"{'='*60}\n")
 
-    from autoflow import Flow, ApiFlow, NodeInfo, Connection
-    from autoflow.connection import (
+    from autograph import Flow, ApiFlow, NodeInfo, Connection
+    from autograph.connection import (
         get_connection_input_names,
         get_output_slots,
         get_all_input_names,
@@ -531,7 +531,7 @@ def run(collector: ResultCollector, **kwargs) -> None:
         from_nodes = flow.nodes.KSampler
 
         # Single node → should return NodeRef, not NodeSet
-        from autoflow.flowtree import NodeRef
+        from autograph.flowtree import NodeRef
         assert isinstance(from_nodes, NodeRef), f"Expected NodeRef, got {type(from_nodes).__name__}"
 
         # Both should have inputs/outputs
