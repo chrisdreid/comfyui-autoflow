@@ -5,17 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.1] - 2026-03-06 — FINAL RELEASE (Deprecation)
+## [2.0.0] - 2026-03-06 — comfyui-autograph
 
-### ⚠️ This package has been renamed to [`comfyui-autograph`](https://pypi.org/project/comfyui-autograph/)
+### 🚀 Package Renamed: `comfyui-autoflow` → `comfyui-autograph`
 
-This is the **final release** of `comfyui-autograph`. The project continues under the new name `comfyui-autograph`.
+This is the first release under the new name **comfyui-autograph** (v2.0.0).
 
-- **No code changes** — identical to v1.5.0 except for the deprecation warning
-- `import autograph` now emits a `DeprecationWarning` directing users to `pip install comfyui-autograph`
-- All future development will happen at [github.com/chrisdreid/comfyui-autograph](https://github.com/chrisdreid/comfyui-autograph)
+#### Breaking Changes
+- **Package name**: `comfyui-autoflow` → `comfyui-autograph`
+- **Imports**: `import autoflow` → `import autograph`
+- **CLI**: `autoflow` → `autograph` / `python -m autograph`
+- **Environment variables**: all `AUTOFLOW_*` → `AUTOGRAPH_*`
+  - `AUTOFLOW_COMFYUI_SERVER_URL` → `AUTOGRAPH_COMFYUI_SERVER_URL`
+  - `AUTOFLOW_MODEL_LAYER` → `AUTOGRAPH_MODEL_LAYER`
+  - `AUTOFLOW_NODEINFO_SOURCE` → `AUTOGRAPH_NODEINFO_SOURCE`
+  - (and all others)
+- **Internal attributes**: `_autoflow_origin` → `_autograph_origin`
+- **Workflow metadata namespace**: `extra.autoflow` → `extra.autograph`
 
-**To migrate:** `pip uninstall comfyui-autograph && pip install comfyui-autograph` — then change imports from `autograph` to `autograph`.
+#### Migration
+```bash
+pip uninstall comfyui-autoflow
+pip install comfyui-autograph
+```
+Then update your imports and environment variables.
+
+---
+
+## [1.5.1] - 2026-03-06 — FINAL RELEASE of comfyui-autoflow
+
+### ⚠️ Deprecation Notice
+
+This was the **final release** of `comfyui-autoflow`. The project continues as `comfyui-autograph` (v2.0.0+).
+
+- `import autoflow` emits a `DeprecationWarning` directing users to `pip install comfyui-autograph`
+- No code changes from v1.5.0 except the deprecation warning
 
 ---
 
