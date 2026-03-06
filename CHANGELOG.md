@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Workflow embedding** — `Flow.submit(embed_workflow=True)` auto-embeds workspace JSON in PNG metadata
 - **`WidgetValue.to_input()` / `.to_attr()`** — promote/demote directly from attribute access: `node.width.to_input()`
 - Tests 9.17–9.31 in `phase_09_builder.py` (31 total Phase 9 tests)
+- **Auto-save path** — `flow.save()` with no args re-saves to the last loaded/saved path; `flow._filepath` tracks it
+- **REPL-friendly status()** — `node.inputs.status()` and `node.outputs.status()` display nicely in REPL without `print()`
 
 ### Fixed
 - **Widget values scramble on `__setattr__`** — `FlowNodeProxy.__setattr__` now updates values in-place in the original `widgets_values` array, preserving frontend-only values like `control_after_generate` that aren't in server `object_info`

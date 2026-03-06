@@ -197,16 +197,23 @@ class _MappingWrapper(MutableMapping):
                 return tj()
         return json.dumps(self._data, indent=indent, ensure_ascii=ensure_ascii) + "\n"
 
-    def save(self, output_path: Union[str, Path], *, indent: int = DEFAULT_JSON_INDENT, ensure_ascii: bool = DEFAULT_JSON_ENSURE_ASCII) -> Path:
+    def save(self, output_path: Union[str, Path, None] = None, *, indent: int = DEFAULT_JSON_INDENT, ensure_ascii: bool = DEFAULT_JSON_ENSURE_ASCII) -> Path:
+        if output_path is None:
+            output_path = getattr(self, "_filepath", None)
+            if output_path is None:
+                raise ValueError("No file path known — pass output_path or load/save once first.")
         sv = getattr(self._data, "save", None)
         if callable(sv):
             try:
-                return sv(output_path, indent=indent, ensure_ascii=ensure_ascii)
+                result = sv(output_path, indent=indent, ensure_ascii=ensure_ascii)
             except TypeError:
-                return sv(output_path)
+                result = sv(output_path)
+            self._filepath = Path(output_path)
+            return result
         p = Path(output_path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(self.to_json(indent=indent, ensure_ascii=ensure_ascii), encoding="utf-8")
+        self._filepath = p
         return p
 
     # MutableMapping protocol
@@ -424,6 +431,15 @@ class Flow(_MappingWrapper):
         f = x if isinstance(x, _legacy.Flow) else _legacy.Flow(x, **kwargs)
         self._flow = f
         self._data = f
+        # Track file path for save() with no args
+        if isinstance(x, (str, Path)):
+            xp = Path(x)
+            if xp.exists() and xp.is_file():
+                self._filepath = xp.resolve()
+            else:
+                self._filepath = None
+        else:
+            self._filepath = None
         # Warn if node_info could not be resolved.
         if getattr(f, "node_info", None) is None:
             warnings.warn(
@@ -1638,6 +1654,13 @@ class SlotRef:
                 ]
 
 
+class _PrettyStr(str):
+    """String that renders with newlines in REPL (repr shows the formatted output)."""
+    __slots__ = ()
+    def __repr__(self) -> str:
+        return str(self)
+
+
 class InputsView:
     """Dict-like view of a node's input slots.
 
@@ -1853,7 +1876,7 @@ class InputsView:
                             lines.append(f"  ○ {name:<20} [{itype}]")
         except Exception:
             lines.append("  (no flow data)")
-        return "\n".join(lines)
+        return _PrettyStr("\n".join(lines))
 
 
 class OutputsView:
@@ -1995,7 +2018,7 @@ class OutputsView:
                             lines.append(f"  ○ {name:<20} [{otype}]")
         except Exception:
             lines.append("  (no flow data)")
-        return "\n".join(lines)
+        return _PrettyStr("\n".join(lines))
 
 
 class NodeRef:
