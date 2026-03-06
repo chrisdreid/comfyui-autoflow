@@ -1,8 +1,8 @@
-"""autoflow.flowtree
+"""autograph.flowtree
 
 Navigation-first model wrappers (non-dict subclasses).
 
-This is the default model layer (``AUTOFLOW_MODEL_LAYER=flowtree``).
+This is the default model layer (``AUTOGRAPH_MODEL_LAYER=flowtree``).
 """
 
 from __future__ import annotations
@@ -258,10 +258,10 @@ class ApiFlow(_MappingWrapper):
             )
             if oi_dict is not None:
                 oi_obj = _legacy.NodeInfo(oi_dict)
-                setattr(oi_obj, "_autoflow_origin", origin)
+                setattr(oi_obj, "_AUTOGRAPH_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
-                    setattr(oi_obj, "_autoflow_source", s)
+                    setattr(oi_obj, "_AUTOGRAPH_source", s)
                 kwargs["node_info"] = oi_obj
         api = x if isinstance(x, _legacy.ApiFlow) else _legacy.ApiFlow(x, **kwargs)
         self._api = api
@@ -296,7 +296,7 @@ class ApiFlow(_MappingWrapper):
         if not isinstance(node, dict):
             raise KeyError(nid)
         p = _legacy.NodeProxy(node, nid, self._api)
-        object.__setattr__(p, "_autoflow_addr", nid)
+        object.__setattr__(p, "_AUTOGRAPH_addr", nid)
         return NodeRef(p, kind="api", addr=nid, group=None, index=None, dotpath=f'by_id("{nid}")', dictpath=[nid])
 
     def submit(self, *args: Any, **kwargs: Any):
@@ -410,10 +410,10 @@ class Flow(_MappingWrapper):
             )
             if oi_dict is not None:
                 oi_obj = _legacy.NodeInfo(oi_dict)
-                setattr(oi_obj, "_autoflow_origin", origin)
+                setattr(oi_obj, "_AUTOGRAPH_origin", origin)
                 s = getattr(oi_obj, "source", None)
                 if isinstance(s, str) and s:
-                    setattr(oi_obj, "_autoflow_source", s)
+                    setattr(oi_obj, "_AUTOGRAPH_source", s)
                 kwargs["node_info"] = oi_obj
         # When no flow data is provided, inject a builder skeleton so
         # add_node() / connect() / >> / save() all work out of the box.
@@ -445,7 +445,7 @@ class Flow(_MappingWrapper):
             warnings.warn(
                 "Flow created without node_info — widget access and tab completion will be limited.\n"
                 "Options:\n"
-                "  • Set AUTOFLOW_COMFYUI_SERVER_URL env var (auto-fetches)\n"
+                "  • Set AUTOGRAPH_COMFYUI_SERVER_URL env var (auto-fetches)\n"
                 "  • Pass node_info= to Flow()\n"
                 "  • Call flow.fetch_node_info(server_url=...)\n"
                 "See: docs/node-info-and-env.md",
@@ -653,7 +653,7 @@ class Flow(_MappingWrapper):
 
         if class_type not in ni_dict:
             # Accept spec objects from ni.CLIPTextEncode or ni.find()
-            addr = getattr(class_type, "_autoflow_addr", None)
+            addr = getattr(class_type, "_AUTOGRAPH_addr", None)
             if addr and addr in ni_dict:
                 class_type = addr
             elif isinstance(class_type, str):
@@ -753,7 +753,7 @@ class Flow(_MappingWrapper):
 
         # Invalidate DAG cache if present
         try:
-            object.__delattr__(self._flow, "_autoflow_dag_cache")
+            object.__delattr__(self._flow, "_AUTOGRAPH_dag_cache")
         except (AttributeError, TypeError):
             pass
 
@@ -837,7 +837,7 @@ class Flow(_MappingWrapper):
 
         # Invalidate DAG cache
         try:
-            object.__delattr__(self._flow, "_autoflow_dag_cache")
+            object.__delattr__(self._flow, "_AUTOGRAPH_dag_cache")
         except (AttributeError, TypeError):
             pass
 
@@ -1152,10 +1152,10 @@ class NodeInfo(_MappingWrapper):
         - file path to node_info.json
         - URL to a JSON node_info
         - "modules" / "from_comfyui_modules" to load from local ComfyUI modules
-        - "fetch" / "server" when server_url (or AUTOFLOW_COMFYUI_SERVER_URL) is available
+        - "fetch" / "server" when server_url (or AUTOGRAPH_COMFYUI_SERVER_URL) is available
 
         Default behavior (when x and source are omitted):
-        - If AUTOFLOW_NODE_INFO_SOURCE (or server_url) is set, node_info is auto-resolved.
+        - If AUTOGRAPH_NODE_INFO_SOURCE (or server_url) is set, node_info is auto-resolved.
         - Otherwise, an empty NodeInfo is created (no error).
         """
         source = kwargs.pop("source", None)
@@ -1181,14 +1181,14 @@ class NodeInfo(_MappingWrapper):
                     "Could not resolve node_info. Options:\n"
                     "  • NodeInfo('fetch', server_url='http://localhost:8188')\n"
                     "  • NodeInfo('path/to/node_info.json')\n"
-                    "  • Set AUTOFLOW_COMFYUI_SERVER_URL env var and use NodeInfo('fetch')\n"
-                    "  • Set AUTOFLOW_NODE_INFO_SOURCE env var"
+                    "  • Set AUTOGRAPH_COMFYUI_SERVER_URL env var and use NodeInfo('fetch')\n"
+                    "  • Set AUTOGRAPH_NODE_INFO_SOURCE env var"
                 )
             oi = _legacy.NodeInfo(oi_dict)
-            setattr(oi, "_autoflow_origin", origin)
+            setattr(oi, "_AUTOGRAPH_origin", origin)
             s = getattr(oi, "source", None)
             if isinstance(s, str) and s:
-                setattr(oi, "_autoflow_source", s)
+                setattr(oi, "_AUTOGRAPH_source", s)
         else:
             oi_dict, _use_api, origin = resolve_node_info_with_origin(
                 None,
@@ -1201,10 +1201,10 @@ class NodeInfo(_MappingWrapper):
                 oi = _legacy.NodeInfo({})
             else:
                 oi = _legacy.NodeInfo(oi_dict)
-                setattr(oi, "_autoflow_origin", origin)
+                setattr(oi, "_AUTOGRAPH_origin", origin)
                 s = getattr(oi, "source", None)
                 if isinstance(s, str) and s:
-                    setattr(oi, "_autoflow_source", s)
+                    setattr(oi, "_AUTOGRAPH_source", s)
 
         self._oi = oi
         self._data = oi
@@ -1272,7 +1272,7 @@ class NodeInfo(_MappingWrapper):
         # Tag DictView results with the class_type so add_node() can resolve them
         if isinstance(result, _legacy.DictView) and name in self._oi:
             try:
-                object.__setattr__(result, "_autoflow_addr", name)
+                object.__setattr__(result, "_AUTOGRAPH_addr", name)
             except (AttributeError, TypeError):
                 pass
         return result
@@ -2667,7 +2667,7 @@ class NodeRef:
 
         # Invalidate DAG cache
         try:
-            object.__delattr__(flow_data, "_autoflow_dag_cache")
+            object.__delattr__(flow_data, "_AUTOGRAPH_dag_cache")
         except (AttributeError, TypeError):
             pass
 
@@ -2716,7 +2716,7 @@ class NodeRef:
 
         # Invalidate DAG cache
         try:
-            object.__delattr__(flow_data, "_autoflow_dag_cache")
+            object.__delattr__(flow_data, "_AUTOGRAPH_dag_cache")
         except (AttributeError, TypeError):
             pass
 
@@ -3040,7 +3040,7 @@ class NodeSet:
         nodes: List[NodeRef] = []
         for i, (nid, node) in enumerate(matches):
             p = _legacy.NodeProxy(node, nid, api._api)
-            object.__setattr__(p, "_autoflow_addr", nid)
+            object.__setattr__(p, "_AUTOGRAPH_addr", nid)
             dot = f"{group_name}[{i}]"
             nodes.append(NodeRef(p, kind="api", addr=nid, group=group_name, index=i, dotpath=dot, dictpath=[nid]))
         return NodeSet(nodes, kind="api", set_path=group_name, set_dictpath=[group_name])
@@ -3180,7 +3180,7 @@ class FlowTreeNodesView:
         refs: List[NodeRef] = []
         for i, (idx, n) in enumerate(matches):
             p = _legacy.FlowNodeProxy(n, idx, flow)
-            object.__setattr__(p, "_autoflow_addr", str(n.get("id", idx)))
+            object.__setattr__(p, "_AUTOGRAPH_addr", str(n.get("id", idx)))
             ref = NodeRef(
                 p,
                 kind="flow",
@@ -3211,7 +3211,7 @@ class FlowTreeNodesView:
                     except Exception:
                         idx = 0
                 proxy = _legacy.FlowNodeProxy(node, idx, flow)
-                object.__setattr__(proxy, "_autoflow_addr", pth)
+                object.__setattr__(proxy, "_AUTOGRAPH_addr", pth)
                 return NodeRef(proxy, kind="flow", addr=pth, group=None, index=None, dotpath=f'nodes.by_path("{pth}")', dictpath=["nodes_by_path", pth])
         raise KeyError(addr)
 
@@ -3227,14 +3227,14 @@ class FlowTreeNodesView:
             if isinstance(nodes, list) and 0 <= key < len(nodes) and isinstance(nodes[key], dict):
                 n = nodes[key]
                 proxy = _legacy.FlowNodeProxy(n, key, flow)
-                object.__setattr__(proxy, "_autoflow_addr", str(n.get("id", key)))
+                object.__setattr__(proxy, "_AUTOGRAPH_addr", str(n.get("id", key)))
                 return NodeRef(proxy, kind="flow", addr=str(n.get("id", key)), group=None, index=None, dotpath=f"nodes[{key}]", dictpath=["nodes", key])
             # treat as node id lookup (top-level only)
             if isinstance(nodes, list):
                 for idx, n in enumerate(nodes):
                     if isinstance(n, dict) and n.get("id") == key:
                         proxy = _legacy.FlowNodeProxy(n, idx, flow)
-                        object.__setattr__(proxy, "_autoflow_addr", str(key))
+                        object.__setattr__(proxy, "_AUTOGRAPH_addr", str(key))
                         return NodeRef(proxy, kind="flow", addr=str(key), group=None, index=None, dotpath=f"nodes[{key}]", dictpath=["nodes", idx])
             raise KeyError(key)
         if isinstance(key, str):
