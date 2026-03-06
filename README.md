@@ -1,3 +1,17 @@
+> [!CAUTION]
+> ## ⚠️ This package has been renamed to [`comfyui-autograph`](https://pypi.org/project/comfyui-autograph/)
+>
+> `comfyui-autoflow` will no longer receive updates. Please switch:
+> ```bash
+> pip uninstall comfyui-autoflow
+> pip install comfyui-autograph
+> ```
+> The API is identical — just change your imports from `autoflow` to `autograph`.
+>
+> GitHub: [github.com/chrisdreid/comfyui-autograph](https://github.com/chrisdreid/comfyui-autograph)
+
+---
+
 <!-- Keep version below in sync with autoflow/version.py -->
 ```text
 ComfyUI 
@@ -7,7 +21,7 @@ ComfyUI
 ██╔══██║██║   ██║   ██║   ██║   ██║██╔══╝  ██║     ██║   ██║██║███╗██║
 ██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║     ███████╗╚██████╔╝╚███╔███╔╝
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝ 
-                                                       version: 1.5.0
+                                                       version: 1.5.1
 ```
 
 [![PyPI version](https://img.shields.io/pypi/v/comfyui-autoflow?color=blue)](https://pypi.org/project/comfyui-autoflow/)

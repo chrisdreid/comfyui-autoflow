@@ -1,7 +1,21 @@
 """autoflow package
 
 Public API is re-exported here for convenience.
+
+.. deprecated:: 1.5.1
+    ``comfyui-autoflow`` has been renamed to ``comfyui-autograph``.
+    Install the new package: ``pip install comfyui-autograph``
 """
+
+import warnings as _warnings
+
+_warnings.warn(
+    "comfyui-autoflow has been renamed to comfyui-autograph. "
+    "This package (comfyui-autoflow) will no longer receive updates. "
+    "Please switch: pip install comfyui-autograph",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from .version import __version__
 from .model_layer import (  # noqa: F401

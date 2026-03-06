@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-03-06 — FINAL RELEASE (Deprecation)
+
+### ⚠️ This package has been renamed to [`comfyui-autograph`](https://pypi.org/project/comfyui-autograph/)
+
+This is the **final release** of `comfyui-autoflow`. The project continues under the new name `comfyui-autograph`.
+
+- **No code changes** — identical to v1.5.0 except for the deprecation warning
+- `import autoflow` now emits a `DeprecationWarning` directing users to `pip install comfyui-autograph`
+- All future development will happen at [github.com/chrisdreid/comfyui-autograph](https://github.com/chrisdreid/comfyui-autograph)
+
+**To migrate:** `pip uninstall comfyui-autoflow && pip install comfyui-autograph` — then change imports from `autoflow` to `autograph`.
+
+---
+
 ## [1.5.0] - 2026-03-05
 
 ### Added
