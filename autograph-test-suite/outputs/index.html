@@ -121,7 +121,7 @@
 <h1>🧪 autograph Test Dashboard</h1>
 <div class="overall">🎉 ALL TESTS PASSED</div>
 <details class="env-panel">
-<summary class="env-summary"><strong>Version:</strong> 2.0.0 &nbsp;|&nbsp; <strong>Python:</strong> 3.14.3 &nbsp;|&nbsp; <strong>OS:</strong> win32 &nbsp;|&nbsp; <strong>Date:</strong> 2026-03-06 12:33:06 &nbsp;|&nbsp; <strong>Total:</strong> 255 tests</summary>
+<summary class="env-summary"><strong>Version:</strong> 2.0.0 &nbsp;|&nbsp; <strong>Python:</strong> 3.14.3 &nbsp;|&nbsp; <strong>OS:</strong> win32 &nbsp;|&nbsp; <strong>Date:</strong> 2026-03-07 00:08:47 &nbsp;|&nbsp; <strong>Total:</strong> 262 tests</summary>
 <div class="env-grid">
 <div class="env-row"><span class="env-key">🐍 Python</span><span class="env-val env-ok">3.14.3</span></div>
 <div class="env-row"><span class="env-key">📦 pip</span><span class="env-val env-ok">25.3</span></div>
@@ -137,7 +137,7 @@
 
 
 <div class="summary">
-  <div class="stat pass"><div class="stat-value">243</div><div class="stat-label">Passed</div></div>
+  <div class="stat pass"><div class="stat-value">250</div><div class="stat-label">Passed</div></div>
   <div class="stat fail"><div class="stat-value">0</div><div class="stat-label">Failed</div></div>
   <div class="stat error"><div class="stat-value">0</div><div class="stat-label">Errors</div></div>
   <div class="stat skip"><div class="stat-value">12</div><div class="stat-label">Skipped</div></div>
@@ -194,7 +194,7 @@
                 <td class="id-col">1.4</td>
                 <td>✅ Bundled workflow.json loads</td>
                 <td><strong>PASS</strong></td>
-                <td>0.009s</td>
+                <td>0.040s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -218,7 +218,7 @@
                 <td class="id-col">1.6</td>
                 <td>✅ Default model layer is flowtree</td>
                 <td><strong>PASS</strong></td>
-                <td>0.488s</td>
+                <td>0.197s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -230,7 +230,7 @@
                 <td class="id-col">1.7</td>
                 <td>✅ AUTOGRAPH_MODEL_LAYER=models</td>
                 <td><strong>PASS</strong></td>
-                <td>0.213s</td>
+                <td>0.188s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -242,7 +242,7 @@
                 <td class="id-col">1.8</td>
                 <td>✅ AUTOGRAPH_MODEL_LAYER=flowtree</td>
                 <td><strong>PASS</strong></td>
-                <td>0.218s</td>
+                <td>0.190s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -255,7 +255,7 @@ clip_neg = flow.nodes.CLIPTextEncode[1]</pre></div></div>
                 <td class="id-col">1.9</td>
                 <td>✅ Invalid model layer fails fast</td>
                 <td><strong>PASS</strong></td>
-                <td>0.120s</td>
+                <td>0.169s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -268,7 +268,7 @@ seed = api.KSampler.seed</pre></div></div>
                 <td class="id-col">1.10</td>
                 <td>✅ convert_with_errors: invalid workflow → ok=False</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.028s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -280,7 +280,7 @@ seed = api.KSampler.seed</pre></div></div>
                 <td class="id-col">1.11</td>
                 <td>✅ convert_with_errors: unknown node type</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -293,7 +293,7 @@ assert api.KSampler.seed == 42</pre></div></div>
                 <td class="id-col">1.12</td>
                 <td>✅ convert_with_errors: valid workflow → ok=True</td>
                 <td><strong>PASS</strong></td>
-                <td>0.004s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -305,7 +305,7 @@ assert api.KSampler.seed == 42</pre></div></div>
                 <td class="id-col">1.13</td>
                 <td>✅ result.errors is a list</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -383,7 +383,7 @@ assert api.KSampler.seed == 42</pre></div></div>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-desc">Access raw API node dict by node ID string</div><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ni.KSampler</div><div class="io-box"><span class="io-label">OUTPUT</span> DictView</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ dot access</div></div></div>
+                    <div class="detail-content"><div class="detail-desc">Access raw API node dict by node ID string</div><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ni.KSampler</div><div class="io-box"><span class="io-label">OUTPUT</span> NodeTypeRef</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ dot access</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="Convert workflow and serialize to JSON in one step">
@@ -415,7 +415,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.7</td>
                 <td>✅ ni.to_json()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -427,12 +427,12 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.8</td>
                 <td>✅ ni.save() → NodeInfo.load()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.008s</td>
+                <td>0.017s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save→load(tmpsst3etd0.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 6 types</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ round-trip</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save→load(tmpucr30pxr.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 6 types</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ round-trip</div></div></div>
                 </td>
             </tr>
             <tr style="background: #4a4a0022;" class="expandable" onclick="toggleDetail(this)" title="Metadata written to _meta persists through to_json() serialization">
@@ -487,7 +487,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.13</td>
                 <td>✅ Access widget without node_info</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.018s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -499,7 +499,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.14</td>
                 <td>✅ Access widget with node_info</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -535,12 +535,12 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.17</td>
                 <td>✅ fetch_node_info(file path)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.005s</td>
+                <td>0.011s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> fetch_node_info(builtin_node_info_4b53jr8h.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 696969</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ file path</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> fetch_node_info(builtin_node_info_wr71tn52.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 696969</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ file path</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
@@ -571,7 +571,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.20</td>
                 <td>✅ NodeInfo schema drill to seed spec</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -583,7 +583,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.21</td>
                 <td>✅ WidgetValue.spec() schema drill</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -595,7 +595,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.22</td>
                 <td>✅ dir(api_node) schema-aware</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -607,7 +607,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.23</td>
                 <td>✅ Flow file load source metadata</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -631,43 +631,43 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">2.25</td>
                 <td>⏭️ Flowtree: source metadata</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.120s</td>
+                <td>0.088s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os\nfrom pathlib import Path\nfrom autograph import Flow, ApiFlow\n\nflow_path = &quot;C:\\Users\\corsu\\Documents\\dev\\repos\\comfyui-autoflow\\examples\\workflows\\workflow.json&quot;\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_4b53jr8h.json&quot;\n\nf = Flow.load(flow_path, node_info=oi_path)\nprint(f.source)\nprint(f.node_info.source)\n\napi = ApiFlow(flow_path, node_info=oi_path)\nprint(api.source)\nprint(api.node_info.source)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
+                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os\nfrom pathlib import Path\nfrom autograph import Flow, ApiFlow\n\nflow_path = &quot;C:\\Users\\corsu\\Documents\\dev\\repos\\comfyui-autoflow\\examples\\workflows\\workflow.json&quot;\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_wr71tn52.json&quot;\n\nf = Flow.load(flow_path, node_info=oi_path)\nprint(f.source)\nprint(f.node_info.source)\n\napi = ApiFlow(flow_path, node_info=oi_path)\nprint(api.source)\nprint(api.node_info.source)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
                 </td>
             </tr>
             <tr style="background: #4a4a0022;" class="expandable" onclick="toggleDetail(this)" title="">
                 <td class="id-col">2.26</td>
                 <td>⏭️ Flowtree NodeInfo init + source + load</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.122s</td>
+                <td>0.095s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os, sys\nfrom autograph import NodeInfo\n\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_4b53jr8h.json&quot;\n\n# Construct empty NodeInfo\no = NodeInfo()\nprint(len(o))\n\n# Load from source= parameter\no2 = NodeInfo(source=oi_path)\nprint(&quot;KSampler&quot; in o2)\n\n# Load from file path\no3 = NodeInfo.load(oi_path)\nprint(&quot;KSampler&quot; in o3)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
+                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os, sys\nfrom autograph import NodeInfo\n\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_wr71tn52.json&quot;\n\n# Construct empty NodeInfo\no = NodeInfo()\nprint(len(o))\n\n# Load from source= parameter\no2 = NodeInfo(source=oi_path)\nprint(&quot;KSampler&quot; in o2)\n\n# Load from file path\no3 = NodeInfo.load(oi_path)\nprint(&quot;KSampler&quot; in o3)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
                 </td>
             </tr>
             <tr style="background: #4a4a0022;" class="expandable" onclick="toggleDetail(this)" title="">
                 <td class="id-col">2.27</td>
                 <td>⏭️ Flowtree NodeInfo passthrough keeps source</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.108s</td>
+                <td>0.104s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os\nfrom pathlib import Path\nfrom autograph import ApiFlow, NodeInfo\n\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_4b53jr8h.json&quot;\n\noi = NodeInfo.load(oi_path)\napi = ApiFlow({&quot;1&quot;: {&quot;class_type&quot;: &quot;KSampler&quot;, &quot;inputs&quot;: {&quot;seed&quot;: 1}}}, node_info=oi)\nprint(api.node_info.source)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
+                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>subprocess failed: Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nimport os\nfrom pathlib import Path\nfrom autograph import ApiFlow, NodeInfo\n\noi_path = &quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_wr71tn52.json&quot;\n\noi = NodeInfo.load(oi_path)\napi = ApiFlow({&quot;1&quot;: {&quot;class_type&quot;: &quot;KSampler&quot;, &quot;inputs&quot;: {&quot;seed&quot;: 1}}}, node_info=oi)\nprint(api.node_info.source)\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
                 </td>
             </tr>
             <tr style="background: #4a4a0022;" class="expandable" onclick="toggleDetail(this)" title="">
                 <td class="id-col">2.28</td>
                 <td>⏭️ NodeInfo(&#x27;fetch&#x27;) uses AUTOGRAPH_COMFYUI_SERVER_URL</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.128s</td>
+                <td>0.174s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -704,7 +704,7 @@ if result.ok: api = result.data</pre></div></div>
                 <td class="id-col">3.2</td>
                 <td>✅ Flow(path) constructor</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.031s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -898,19 +898,19 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.18</td>
                 <td>✅ save() → reload</td>
                 <td><strong>PASS</strong></td>
-                <td>0.040s</td>
+                <td>0.021s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save(tmpi6f1blo7.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> reload matched</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ save round-trip</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save(tmp2ccoc3fb.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> reload matched</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ save round-trip</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
                 <td class="id-col">3.19</td>
                 <td>✅ flow.dag builds without error</td>
                 <td><strong>PASS</strong></td>
-                <td>0.004s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -922,7 +922,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.20</td>
                 <td>✅ Tab completion: dir(flow.nodes) includes class_types</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -934,7 +934,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.21</td>
                 <td>✅ Tab completion: dir(api.KSampler) shows widgets</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1042,7 +1042,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.30</td>
                 <td>✅ iter(flow.nodes) yields items</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1054,7 +1054,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.31</td>
                 <td>✅ flow.nodes.keys()/values()/items()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1078,7 +1078,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.33</td>
                 <td>✅ flow.convert() → ApiFlow</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1150,7 +1150,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.39</td>
                 <td>✅ Flow(dict) constructor (core)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1162,7 +1162,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.40</td>
                 <td>✅ Flow(bytes) constructor (core)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1179,7 +1179,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save(tmpaimt83mo.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 11 nodes</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ save round-trip</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save(tmp09vgke5z.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 11 nodes</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ save round-trip</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
@@ -1234,7 +1234,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.46</td>
                 <td>✅ .bypass is False by default</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1246,7 +1246,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.47</td>
                 <td>✅ .bypass = True → mode=4</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1270,7 +1270,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.49</td>
                 <td>✅ __repr__ format</td>
                 <td><strong>PASS</strong></td>
-                <td>0.000s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1318,7 +1318,7 @@ results = api.find(class_type=&#x27;KSampler&#x27;)</pre></div></div>
                 <td class="id-col">3.53</td>
                 <td>✅ Dot-write: node.seed = 42</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1824,7 +1824,7 @@ C</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ br
                 <td class="id-col">4.1</td>
                 <td>✅ ApiFlow(dict) → ApiFlow</td>
                 <td><strong>PASS</strong></td>
-                <td>0.000s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1872,7 +1872,7 @@ C</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ br
                 <td class="id-col">4.5</td>
                 <td>✅ MarkdownNotes stripped → 7 API nodes</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1960,7 +1960,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.12</td>
                 <td>✅ _meta survives to_json()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -1996,7 +1996,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.15</td>
                 <td>✅ Widget introspection: .spec()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2008,7 +2008,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.16</td>
                 <td>✅ Flow dag.edges</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.030s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2020,7 +2020,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.17</td>
                 <td>✅ ApiFlow dag.edges</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2126,7 +2126,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.23</td>
                 <td>✅ dag.descendants(SaveImage)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2150,7 +2150,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.25</td>
                 <td>✅ ApiFlow.to_json(indent=2)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2162,12 +2162,12 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.26</td>
                 <td>✅ ApiFlow.save() to temp file</td>
                 <td><strong>PASS</strong></td>
-                <td>0.005s</td>
+                <td>0.023s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> api.save(tmpbdo_nl13.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 7 nodes</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ saved</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> api.save(tmpmx_qoe87.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> 7 nodes</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ saved</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
@@ -2186,7 +2186,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.28</td>
                 <td>✅ SaveImage raw inputs dict</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2198,7 +2198,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.29</td>
                 <td>✅ ApiFlow class_type enumeration</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2234,7 +2234,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">4.32</td>
                 <td>✅ convert_workflow skips MarkdownNote</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2283,7 +2283,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.3</td>
                 <td>✅ Widget write on ApiFlow</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2367,7 +2367,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.10</td>
                 <td>✅ Multi-widget write on ApiFlow</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2379,24 +2379,24 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.11</td>
                 <td>✅ api.save() → ApiFlow.load()</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.006s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save→load(tmpla7vv0pe.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> len=7</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ round-trip</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> save→load(tmp52jwsdxc.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> len=7</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ round-trip</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
                 <td class="id-col">5.12</td>
                 <td>✅ ApiFlow.load(path)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.004s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ApiFlow.load(tmpqt_p442c.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> ApiFlow len=7</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ loaded</div></div></div>
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ApiFlow.load(tmpi3szu1n7.json)</div><div class="io-box"><span class="io-label">OUTPUT</span> ApiFlow len=7</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ loaded</div></div></div>
                 </td>
             </tr>
             <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
@@ -2547,7 +2547,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.25</td>
                 <td>✅ find() sees recent mutations</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2607,7 +2607,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.30</td>
                 <td>✅ map_strings literal replacement</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.004s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2619,7 +2619,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.31</td>
                 <td>✅ map_strings regex replacement</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2631,7 +2631,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.32</td>
                 <td>✅ map_strings env expansion</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2643,7 +2643,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.33</td>
                 <td>✅ map_strings file rules</td>
                 <td><strong>PASS</strong></td>
-                <td>0.005s</td>
+                <td>0.006s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2655,7 +2655,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.34</td>
                 <td>✅ map_paths(flow, spec)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2691,7 +2691,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">5.37</td>
                 <td>✅ ApiFlow path get/set</td>
                 <td><strong>PASS</strong></td>
-                <td>0.004s</td>
+                <td>0.003s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2801,7 +2801,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.1</td>
                 <td>✅ force_recompute utility</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2837,7 +2837,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.4</td>
                 <td>✅ Legacy Workflow() → ApiFlow chain</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2849,7 +2849,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.5</td>
                 <td>✅ Legacy Flow.nodes navigation</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.002s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2861,7 +2861,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.6</td>
                 <td>✅ fetch_node_info() then widget read</td>
                 <td><strong>PASS</strong></td>
-                <td>0.001s</td>
+                <td>0.024s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2873,7 +2873,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.7</td>
                 <td>✅ NodeSet bulk vs single assignment</td>
                 <td><strong>PASS</strong></td>
-                <td>0.248s</td>
+                <td>0.200s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2885,7 +2885,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.8</td>
                 <td>✅ NodeSet paths + dictpaths</td>
                 <td><strong>PASS</strong></td>
-                <td>0.378s</td>
+                <td>0.200s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2897,7 +2897,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.9</td>
                 <td>⏭️ dir(flow.nodes) lists node types (flowtree)</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.114s</td>
+                <td>0.089s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -2909,12 +2909,12 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">7.10</td>
                 <td>⏭️ find returns NodeSet with paths (flowtree)</td>
                 <td><strong>SKIP</strong></td>
-                <td>0.093s</td>
+                <td>0.089s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
-                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nfrom autograph import Flow\nf = Flow.load(&quot;C:\\Users\\corsu\\Documents\\dev\\repos\\comfyui-autoflow\\examples\\workflows\\workflow.json&quot;, node_info=&quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_4b53jr8h.json&quot;)\nhits = f.nodes.find(type=&quot;KSampler&quot;)\nprint(type(hits).__name__)\nprint(bool(hits.paths()))\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
+                    <div class="detail-content"><div class="detail-msg"><strong>Message:</strong><pre>Command &#x27;[&#x27;C:\\Python314\\python.exe&#x27;, &#x27;-c&#x27;, &#x27;\nfrom autograph import Flow\nf = Flow.load(&quot;C:\\Users\\corsu\\Documents\\dev\\repos\\comfyui-autoflow\\examples\\workflows\\workflow.json&quot;, node_info=&quot;C:\\Users\\corsu\\AppData\\Local\\Temp\\builtin_node_info_wr71tn52.json&quot;)\nhits = f.nodes.find(type=&quot;KSampler&quot;)\nprint(type(hits).__name__)\nprint(bool(hits.paths()))\n&#x27;]&#x27; returned non-zero exit status 1.</pre></div></div>
                 </td>
             </tr>
             <tr style="background: #4a4a0022;" class="expandable" onclick="toggleDetail(this)" title="">
@@ -2972,7 +2972,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
     <div class="stage-section">
         <h2 class="stage-header" onclick="toggleStage(this)">
             ✅ Phase 9: Builder API
-            <span class="stage-count">32/32</span>
+            <span class="stage-count">39/39</span>
             <span class="stage-toggle">▼</span>
         </h2>
         <div class="stage-body">
@@ -3139,7 +3139,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">9.14</td>
                 <td>✅ Roundtrip: build → save → reload</td>
                 <td><strong>PASS</strong></td>
-                <td>0.003s</td>
+                <td>0.014s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -3151,7 +3151,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">9.15</td>
                 <td>✅ Full workflow build (7 nodes, 9 connections)</td>
                 <td><strong>PASS</strong></td>
-                <td>0.004s</td>
+                <td>0.011s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -3175,7 +3175,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">9.17</td>
                 <td>✅ Slot Discovery: InputsView/OutputsView dict-like</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.001s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -3187,7 +3187,7 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">9.18</td>
                 <td>✅ Explicit outputs &gt;&gt; inputs wiring</td>
                 <td><strong>PASS</strong></td>
-                <td>0.002s</td>
+                <td>0.000s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
@@ -3355,12 +3355,96 @@ api_mapping(api, cb, node_info=ni)</pre></div></div>
                 <td class="id-col">9.32</td>
                 <td>✅ Regression: setattr preserves extra widgets_values</td>
                 <td><strong>PASS</strong></td>
-                <td>0.024s</td>
+                <td>0.015s</td>
                 <td class="arrow-col">▶</td>
             </tr>
             <tr class="detail-row" style="display:none;">
                 <td colspan="5">
                     <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> load → set seed → save → verify</div><div class="io-box"><span class="io-label">OUTPUT</span> 7 values, seed=99999</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ no shift</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.33</td>
+                <td>✅ ni.KSampler returns NodeTypeRef</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ni.KSampler</div><div class="io-box"><span class="io-label">OUTPUT</span> NodeTypeRef(&#x27;KSampler&#x27;)</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ NodeTypeRef</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.34</td>
+                <td>✅ ni.KSampler(seed=42) returns NodeBlueprint</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> ni.KSampler(seed=42, steps=30)</div><div class="io-box"><span class="io-label">OUTPUT</span> NodeBlueprint(&#x27;KSampler&#x27;, seed=42, steps=30)</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ NodeBlueprint</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.35</td>
+                <td>✅ flow.add_node(ni.KSampler) via NodeTypeRef</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> flow.add_node(ni.KSampler)</div><div class="io-box"><span class="io-label">OUTPUT</span> id=1</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ type ref</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.36</td>
+                <td>✅ add_node(NodeBlueprint) applies + overrides</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> add_node(blueprint, seed=99)</div><div class="io-box"><span class="io-label">OUTPUT</span> seed overridden</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ blueprint + override</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.37</td>
+                <td>✅ add_node(NodeRef) copies node with fresh ID</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> add_node(existing_ks)</div><div class="io-box"><span class="io-label">OUTPUT</span> id1=1, id2=2</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ copy</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.38</td>
+                <td>✅ flow.add_nodes() batch creation</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> add_nodes([str, ref, blueprint])</div><div class="io-box"><span class="io-label">OUTPUT</span> 3 nodes</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ batch</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">9.39</td>
+                <td>✅ ID uniqueness after repeated blueprint adds</td>
+                <td><strong>PASS</strong></td>
+                <td>0.001s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> add same blueprint 5x</div><div class="io-box"><span class="io-label">OUTPUT</span> ids=[1, 2, 3, 4, 5]</div><div class="io-box"><span class="io-label io-result">RESULT</span> ✓ unique IDs</div></div></div>
                 </td>
             </tr></tbody>
             </table>

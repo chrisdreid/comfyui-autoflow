@@ -387,6 +387,62 @@ class ApiFlow(_MappingWrapper):
         return getattr(self._api, "dag")
 
 
+class NodeBlueprint:
+    """Detached node template — created via ``n.KSampler(seed=42)``.
+
+    Not attached to any flow.  Carries ``class_type`` + widget overrides.
+    ``flow.add_node()`` materialises it.
+    """
+
+    __slots__ = ("class_type", "widget_overrides")
+
+    def __init__(self, class_type: str, **widget_overrides: Any):
+        self.class_type = class_type
+        self.widget_overrides = widget_overrides
+
+    def __repr__(self) -> str:
+        args = ", ".join(f"{k}={v!r}" for k, v in self.widget_overrides.items())
+        return f"NodeBlueprint({self.class_type!r}{', ' + args if args else ''})"
+
+
+class NodeTypeRef:
+    """Callable type reference from NodeInfo.
+
+    ``n.KSampler`` returns this object.  It can be:
+
+    - Passed directly to ``flow.add_node(n.KSampler)`` as a type reference.
+    - Called to create a blueprint: ``n.KSampler(seed=42)`` → ``NodeBlueprint``.
+    """
+
+    __slots__ = ("_view", "_class_type")
+
+    def __init__(self, view: Any, class_type: str):
+        self._view = view
+        self._class_type = class_type
+
+    def __call__(self, **widget_overrides: Any) -> NodeBlueprint:
+        """Create a :class:`NodeBlueprint` with pre-set widget values."""
+        return NodeBlueprint(self._class_type, **widget_overrides)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._view, name)
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self._view
+
+    def __iter__(self):
+        return iter(self._view)
+
+    def __len__(self) -> int:
+        return len(self._view)
+
+    def __getitem__(self, key: Any) -> Any:
+        return self._view[key]
+
+    def __repr__(self) -> str:
+        return f"NodeTypeRef({self._class_type!r})"
+
+
 class Flow(_MappingWrapper):
     def __init__(self, x: Optional[Union[str, Path, bytes, Dict[str, Any], _legacy.Flow]] = None, **kwargs: Any):
         if "server_url" in kwargs:
@@ -614,7 +670,7 @@ class Flow(_MappingWrapper):
 
     def add_node(
         self,
-        class_type: str,
+        node: Any,
         **widget_overrides: Any,
     ) -> "NodeRef":
         """Add a new node to this flow.
@@ -622,8 +678,14 @@ class Flow(_MappingWrapper):
         Uses node_info to build input slots, output slots, and widgets_values.
         Widget defaults come from node_info; pass overrides as keyword args.
 
+        Accepts:
+            - ``str``: class type name (e.g. ``'KSampler'``).
+            - ``NodeTypeRef``: from ``n.KSampler`` (dot access on NodeInfo).
+            - ``NodeBlueprint``: from ``n.KSampler(seed=42)``.
+            - ``NodeRef``: copies an existing node into this flow.
+
         Args:
-            class_type: Node class type (e.g. 'KSampler').
+            node: What to add (see above).
             **widget_overrides: Widget values to override defaults.
 
         Returns:
@@ -641,6 +703,27 @@ class Flow(_MappingWrapper):
         )
         from .convert import get_widget_input_names
 
+        # ---- Dispatch: resolve class_type + merge overrides ----
+        if isinstance(node, NodeBlueprint):
+            class_type = node.class_type
+            widget_overrides = {**node.widget_overrides, **widget_overrides}
+        elif isinstance(node, NodeTypeRef):
+            class_type = node._class_type
+        elif isinstance(node, NodeRef):
+            return self._copy_node(node, **widget_overrides)
+        elif isinstance(node, str):
+            class_type = node
+        else:
+            # Legacy path: accept DictView with _AUTOGRAPH_addr
+            addr = getattr(node, "_AUTOGRAPH_addr", None)
+            if isinstance(addr, str):
+                class_type = addr
+            else:
+                raise TypeError(
+                    f"add_node() expects a string, NodeTypeRef, NodeBlueprint, or NodeRef. "
+                    f"Got {type(node).__name__}."
+                )
+
         ni = getattr(self._flow, "node_info", None)
         if ni is None:
             raise ValueError(
@@ -652,20 +735,9 @@ class Flow(_MappingWrapper):
         ni_dict = _json.loads(_json.dumps(dict(ni)))
 
         if class_type not in ni_dict:
-            # Accept spec objects from ni.CLIPTextEncode or ni.find()
-            addr = getattr(class_type, "_AUTOGRAPH_addr", None)
-            if addr and addr in ni_dict:
-                class_type = addr
-            elif isinstance(class_type, str):
-                raise ValueError(
-                    f"Unknown node class '{class_type}'. Not found in node_info."
-                )
-            else:
-                raise ValueError(
-                    "Could not determine class_type from the provided object. "
-                    "Use ni.CLIPTextEncode (dot access on NodeInfo), ni.find(), "
-                    "or pass the string name directly."
-                )
+            raise ValueError(
+                f"Unknown node class '{class_type}'. Not found in node_info."
+            )
         type_info = ni_dict[class_type]
 
         # ---- Build input slots (connection-only inputs) ----
@@ -759,6 +831,91 @@ class Flow(_MappingWrapper):
 
         # Build a NodeRef for chaining
         proxy = _legacy.FlowNodeProxy(node_dict, len(self._flow["nodes"]) - 1, self._flow)
+        return NodeRef(
+            proxy,
+            kind="flow",
+            addr=str(new_id),
+            group=class_type,
+            index=0,
+            dotpath=f"nodes.{class_type}[0]",
+            dictpath=["nodes", len(self._flow["nodes"]) - 1],
+            flow=self,
+        )
+
+    def add_nodes(self, nodes: List[Any]) -> List["NodeRef"]:
+        """Add multiple nodes at once.
+
+        Each element of *nodes* may be any type accepted by :meth:`add_node`
+        (string, NodeTypeRef, NodeBlueprint, or NodeRef).
+
+        Returns:
+            List of NodeRefs in the same order.
+        """
+        return [self.add_node(n) for n in nodes]
+
+    def _copy_node(
+        self,
+        src: "NodeRef",
+        **widget_overrides: Any,
+    ) -> "NodeRef":
+        """Copy an existing node into this flow (new ID, default position)."""
+        try:
+            flow_data = object.__getattribute__(src, "_flow")
+            if flow_data is None:
+                flow_data = self
+            src_dict = src._find_node_dict(flow_data._flow)
+        except Exception:
+            raise ValueError(
+                "Could not extract node data from the provided NodeRef. "
+                "Ensure the node belongs to a flow."
+            )
+
+        import copy
+        node_dict = copy.deepcopy(src_dict)
+
+        # Assign fresh ID
+        last_id = self._flow.get("last_node_id", 0)
+        new_id = last_id + 1
+        self._flow["last_node_id"] = new_id
+        node_dict["id"] = new_id
+
+        # Assign fresh position
+        node_count = len(self._flow.get("nodes", []))
+        col = node_count % 4
+        row = node_count // 4
+        node_dict["pos"] = [col * 400, row * 300]
+
+        # Clear stale link references (connections don't carry over)
+        for inp in node_dict.get("inputs", []):
+            inp["link"] = None
+        for outp in node_dict.get("outputs", []):
+            outp["links"] = []
+
+        # Apply widget overrides
+        if widget_overrides and node_dict.get("widgets_values"):
+            ni = getattr(self._flow, "node_info", None)
+            if ni is not None:
+                import json as _json
+                ni_dict = _json.loads(_json.dumps(dict(ni)))
+                class_type = node_dict.get("type", "")
+                if class_type in ni_dict:
+                    from .convert import get_widget_input_names
+                    widget_names = get_widget_input_names(class_type, ni_dict, use_api=True)
+                    wv = node_dict["widgets_values"]
+                    for i, wname in enumerate(widget_names):
+                        if wname in widget_overrides and i < len(wv):
+                            wv[i] = widget_overrides[wname]
+
+        self._flow.setdefault("nodes", []).append(node_dict)
+
+        # Invalidate DAG cache
+        try:
+            object.__delattr__(self._flow, "_AUTOGRAPH_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+        proxy = _legacy.FlowNodeProxy(node_dict, len(self._flow["nodes"]) - 1, self._flow)
+        class_type = node_dict.get("type", "unknown")
         return NodeRef(
             proxy,
             kind="flow",
@@ -1269,12 +1426,9 @@ class NodeInfo(_MappingWrapper):
 
     def __getattr__(self, name: str) -> Any:
         result = getattr(self._oi, name)
-        # Tag DictView results with the class_type so add_node() can resolve them
+        # Wrap class_type lookups as NodeTypeRef (callable + passable to add_node)
         if isinstance(result, _legacy.DictView) and name in self._oi:
-            try:
-                object.__setattr__(result, "_AUTOGRAPH_addr", name)
-            except (AttributeError, TypeError):
-                pass
+            return NodeTypeRef(result, name)
         return result
 
     def __dir__(self) -> list:
