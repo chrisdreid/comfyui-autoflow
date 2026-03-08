@@ -10,7 +10,7 @@ from .model_layer import (  # noqa: F401
     Workflow,
     NodeInfo,
 )
-from .flowtree import NodeBlueprint, NodeTypeRef  # noqa: F401
+from .flowtree import Node, NodeBlueprint, NodeTypeRef  # noqa: F401
 from .models import WidgetValue  # noqa: F401
 from .connection import Connection  # noqa: F401
 from .convert import (  # noqa: F401
@@ -77,5 +77,6 @@ __all__ = [
     "WidgetValue",
     "Connection",
     "NodeBlueprint",
+    "Node",
     "NodeTypeRef",
 ]

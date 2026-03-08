@@ -387,22 +387,169 @@ class ApiFlow(_MappingWrapper):
         return getattr(self._api, "dag")
 
 
-class NodeBlueprint:
-    """Detached node template — created via ``n.KSampler(seed=42)``.
+class Node:
+    """Detached node — fully formed but not attached to any flow.
 
-    Not attached to any flow.  Carries ``class_type`` + widget overrides.
-    ``flow.add_node()`` materialises it.
+    Created via ``n.KSampler(seed=42)``.  Has widgets, input slots, output
+    slots populated from ``node_info``.  Mutable.  Pass to
+    ``flow.add_node()`` to materialise (assigns ID + position).
+
+    The node can be stamped into multiple flows or copied freely.
     """
 
-    __slots__ = ("class_type", "widget_overrides")
+    __slots__ = ("_node_dict", "_ni_dict", "_class_type", "_widget_names")
 
-    def __init__(self, class_type: str, **widget_overrides: Any):
-        self.class_type = class_type
-        self.widget_overrides = widget_overrides
+    def __init__(self, class_type: str, ni_dict: Dict[str, Any], **widget_overrides: Any):
+        from .connection import (
+            get_connection_input_names,
+            get_output_slots,
+            get_input_default,
+        )
+        from .convert import get_widget_input_names
+
+        if class_type not in ni_dict:
+            raise ValueError(f"Unknown node class '{class_type}'. Not found in node_info.")
+
+        type_info = ni_dict[class_type]
+
+        # ---- Build input slots (connection-only) ----
+        conn_inputs = get_connection_input_names(class_type, ni_dict)
+        input_slots = []
+        for name in conn_inputs:
+            spec = None
+            inputs_def = type_info.get("input", {})
+            for section in ["required", "optional"]:
+                section_inputs = inputs_def.get(section, {})
+                if isinstance(section_inputs, dict) and name in section_inputs:
+                    spec = section_inputs[name]
+                    break
+            slot_type = spec[0] if spec and isinstance(spec[0], str) else "*"
+            input_slots.append({"name": name, "type": slot_type, "link": None})
+
+        # ---- Build output slots ----
+        out_slots_info = get_output_slots(class_type, ni_dict)
+        output_slots = []
+        for idx, name, out_type in out_slots_info:
+            output_slots.append(
+                {"name": name, "type": out_type, "slot_index": idx, "links": []}
+            )
+
+        # ---- Build widgets_values ----
+        widget_names = get_widget_input_names(class_type, ni_dict, use_api=True)
+        widgets_values = []
+        inputs_def = type_info.get("input", {})
+        for wname in widget_names:
+            if wname in widget_overrides:
+                widgets_values.append(widget_overrides[wname])
+            else:
+                default = get_input_default(class_type, wname, ni_dict)
+                widgets_values.append(default)
+
+            # Frontend-injected follow-up widgets
+            spec = None
+            for section in ["required", "optional"]:
+                section_inputs = inputs_def.get(section, {})
+                if isinstance(section_inputs, dict) and wname in section_inputs:
+                    spec = section_inputs[wname]
+                    break
+            if spec and isinstance(spec, list) and len(spec) >= 2 and isinstance(spec[1], dict):
+                opts = spec[1]
+                if opts.get("control_after_generate"):
+                    cag_key = "control_after_generate"
+                    if cag_key in widget_overrides:
+                        widgets_values.append(widget_overrides[cag_key])
+                    else:
+                        widgets_values.append("randomize")
+
+        node_dict = {
+            "id": None,  # assigned by flow.add_node()
+            "type": class_type,
+            "pos": [0, 0],  # assigned by flow.add_node()
+            "size": [315, 170],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": input_slots,
+            "outputs": output_slots,
+            "properties": {"Node name for S&R": class_type},
+            "widgets_values": widgets_values,
+        }
+
+        object.__setattr__(self, "_node_dict", node_dict)
+        object.__setattr__(self, "_ni_dict", ni_dict)
+        object.__setattr__(self, "_class_type", class_type)
+        object.__setattr__(self, "_widget_names", list(widget_names))
+
+    @property
+    def type(self) -> str:
+        """Node class type (e.g. 'KSampler')."""
+        return self._class_type
+
+    @property
+    def class_type(self) -> str:
+        """Alias for :attr:`type` (backward compat with NodeBlueprint)."""
+        return self._class_type
+
+    @property
+    def inputs(self) -> List[str]:
+        """Input slot names (connection-only)."""
+        return [inp["name"] for inp in self._node_dict.get("inputs", [])]
+
+    @property
+    def outputs(self) -> List[str]:
+        """Output slot names."""
+        return [outp["name"] for outp in self._node_dict.get("outputs", [])]
+
+    @property
+    def widgets(self) -> Dict[str, Any]:
+        """Dict of {widget_name: value}."""
+        wv = self._node_dict.get("widgets_values", [])
+        result = {}
+        for i, name in enumerate(self._widget_names):
+            if i < len(wv):
+                result[name] = wv[i]
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        # Widget access
+        wv = object.__getattribute__(self, "_node_dict").get("widgets_values", [])
+        wnames = object.__getattribute__(self, "_widget_names")
+        for i, wname in enumerate(wnames):
+            if wname == name and i < len(wv):
+                return wv[i]
+        raise AttributeError(f"Node '{self._class_type}' has no widget '{name}'")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name.startswith("_"):
+            return object.__setattr__(self, name, value)
+        # Widget set
+        wv = self._node_dict.get("widgets_values", [])
+        for i, wname in enumerate(self._widget_names):
+            if wname == name and i < len(wv):
+                wv[i] = value
+                return
+        raise AttributeError(f"Node '{self._class_type}' has no widget '{name}'")
+
+    def __dir__(self) -> List[str]:
+        base = {"type", "inputs", "outputs", "widgets", "to_dict"}
+        base.update(self._widget_names)
+        return sorted(base)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a copy of the underlying node dict."""
+        import copy
+        return copy.deepcopy(self._node_dict)
 
     def __repr__(self) -> str:
-        args = ", ".join(f"{k}={v!r}" for k, v in self.widget_overrides.items())
-        return f"NodeBlueprint({self.class_type!r}{', ' + args if args else ''})"
+        w = self.widgets
+        args = ", ".join(f"{k}={v!r}" for k, v in w.items())
+        return f"Node({self._class_type!r}, {args})"
+
+
+# Backward compat alias
+NodeBlueprint = Node
 
 
 class NodeTypeRef:
@@ -411,18 +558,19 @@ class NodeTypeRef:
     ``n.KSampler`` returns this object.  It can be:
 
     - Passed directly to ``flow.add_node(n.KSampler)`` as a type reference.
-    - Called to create a blueprint: ``n.KSampler(seed=42)`` → ``NodeBlueprint``.
+    - Called to create a detached node: ``n.KSampler(seed=42)`` → ``Node``.
     """
 
-    __slots__ = ("_view", "_class_type")
+    __slots__ = ("_view", "_class_type", "_ni_dict")
 
-    def __init__(self, view: Any, class_type: str):
+    def __init__(self, view: Any, class_type: str, ni_dict: Dict[str, Any]):
         self._view = view
         self._class_type = class_type
+        self._ni_dict = ni_dict
 
-    def __call__(self, **widget_overrides: Any) -> NodeBlueprint:
-        """Create a :class:`NodeBlueprint` with pre-set widget values."""
-        return NodeBlueprint(self._class_type, **widget_overrides)
+    def __call__(self, **widget_overrides: Any) -> Node:
+        """Create a detached :class:`Node` with pre-set widget values."""
+        return Node(self._class_type, self._ni_dict, **widget_overrides)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._view, name)
@@ -704,9 +852,8 @@ class Flow(_MappingWrapper):
         from .convert import get_widget_input_names
 
         # ---- Dispatch: resolve class_type + merge overrides ----
-        if isinstance(node, NodeBlueprint):
-            class_type = node.class_type
-            widget_overrides = {**node.widget_overrides, **widget_overrides}
+        if isinstance(node, Node):
+            return self._add_detached_node(node, **widget_overrides)
         elif isinstance(node, NodeTypeRef):
             class_type = node._class_type
         elif isinstance(node, NodeRef):
@@ -720,7 +867,7 @@ class Flow(_MappingWrapper):
                 class_type = addr
             else:
                 raise TypeError(
-                    f"add_node() expects a string, NodeTypeRef, NodeBlueprint, or NodeRef. "
+                    f"add_node() expects a string, NodeTypeRef, Node, or NodeRef. "
                     f"Got {type(node).__name__}."
                 )
 
@@ -852,6 +999,56 @@ class Flow(_MappingWrapper):
             List of NodeRefs in the same order.
         """
         return [self.add_node(n) for n in nodes]
+
+    def _add_detached_node(
+        self,
+        node: "Node",
+        **widget_overrides: Any,
+    ) -> "NodeRef":
+        """Materialise a detached Node into this flow (new ID, position)."""
+        import copy as _copy
+        node_dict = _copy.deepcopy(node._node_dict)
+
+        # Assign fresh ID
+        last_id = self._flow.get("last_node_id", 0)
+        new_id = last_id + 1
+        self._flow["last_node_id"] = new_id
+        node_dict["id"] = new_id
+
+        # Assign fresh position
+        node_count = len(self._flow.get("nodes", []))
+        col = node_count % 4
+        row = node_count // 4
+        node_dict["pos"] = [col * 400, row * 300]
+        node_dict["order"] = node_count
+
+        # Apply call-site widget overrides
+        if widget_overrides:
+            wv = node_dict.get("widgets_values", [])
+            for i, wname in enumerate(node._widget_names):
+                if wname in widget_overrides and i < len(wv):
+                    wv[i] = widget_overrides[wname]
+
+        class_type = node_dict.get("type", "unknown")
+        self._flow.setdefault("nodes", []).append(node_dict)
+
+        # Invalidate DAG cache
+        try:
+            object.__delattr__(self._flow, "_AUTOGRAPH_dag_cache")
+        except (AttributeError, TypeError):
+            pass
+
+        proxy = _legacy.FlowNodeProxy(node_dict, len(self._flow["nodes"]) - 1, self._flow)
+        return NodeRef(
+            proxy,
+            kind="flow",
+            addr=str(new_id),
+            group=class_type,
+            index=0,
+            dotpath=f"nodes.{class_type}[0]",
+            dictpath=["nodes", len(self._flow["nodes"]) - 1],
+            flow=self,
+        )
 
     def _copy_node(
         self,
@@ -1428,7 +1625,10 @@ class NodeInfo(_MappingWrapper):
         result = getattr(self._oi, name)
         # Wrap class_type lookups as NodeTypeRef (callable + passable to add_node)
         if isinstance(result, _legacy.DictView) and name in self._oi:
-            return NodeTypeRef(result, name)
+            # Build a plain-dict ni_dict for Node construction
+            import json as _json
+            ni_dict = _json.loads(_json.dumps(dict(self._oi)))
+            return NodeTypeRef(result, name, ni_dict)
         return result
 
     def __dir__(self) -> list:

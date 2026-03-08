@@ -869,18 +869,24 @@ def run(collector: ResultCollector, **kwargs) -> None:
     _run_test(collector, stage, "9.33", "ni.KSampler returns NodeTypeRef", t_9_33)
 
     # -----------------------------------------------------------------------
-    # 9.34 — NodeBlueprint via call
+    # 9.34 — Node via call (detached node with full widgets)
     # -----------------------------------------------------------------------
     def t_9_34():
-        from autograph import NodeBlueprint
+        from autograph import Node
         bp = ni.KSampler(seed=42, steps=30)
-        assert isinstance(bp, NodeBlueprint), f"Expected NodeBlueprint, got {type(bp).__name__}"
+        assert isinstance(bp, Node), f"Expected Node, got {type(bp).__name__}"
         assert bp.class_type == "KSampler"
-        assert bp.widget_overrides == {"seed": 42, "steps": 30}
+        assert bp.type == "KSampler"
+        assert bp.seed == 42
+        assert bp.steps == 30
+        assert bp.cfg is not None  # default from node_info
+        assert "seed" in dir(bp)
+        assert len(bp.inputs) > 0  # has input slots
+        assert len(bp.outputs) > 0  # has output slots
         assert "KSampler" in repr(bp)
         assert "seed=42" in repr(bp)
-        return {"input": "ni.KSampler(seed=42, steps=30)", "output": repr(bp), "result": "✓ NodeBlueprint"}
-    _run_test(collector, stage, "9.34", "ni.KSampler(seed=42) returns NodeBlueprint", t_9_34)
+        return {"input": "ni.KSampler(seed=42, steps=30)", "output": repr(bp)[:80], "result": "✓ detached Node"}
+    _run_test(collector, stage, "9.34", "ni.KSampler(seed=42) returns detached Node", t_9_34)
 
     # -----------------------------------------------------------------------
     # 9.35 — add_node(NodeTypeRef)
@@ -906,12 +912,20 @@ def run(collector: ResultCollector, **kwargs) -> None:
         assert 42 in wv, f"seed=42 not in {wv}"
         assert 30 in wv, f"steps=30 not in {wv}"
 
-        # Call-site overrides should win over blueprint
+        # Call-site overrides should win over Node values
         flow2 = Flow.create(node_info=ni)
         ks2 = flow2.add_node(bp, seed=99)
         wv2 = flow2._flow["nodes"][0].get("widgets_values", [])
         assert 99 in wv2, f"seed=99 (override) not in {wv2}"
-        return {"input": "add_node(blueprint, seed=99)", "output": f"seed overridden", "result": "✓ blueprint + override"}
+
+        # Node mutability: change value then add
+        bp.seed = 77
+        assert bp.seed == 77
+        flow3 = Flow.create(node_info=ni)
+        ks3 = flow3.add_node(bp)
+        wv3 = flow3._flow["nodes"][0].get("widgets_values", [])
+        assert 77 in wv3, f"seed=77 (mutated) not in {wv3}"
+        return {"input": "add_node(node, seed=99) + mutability", "output": "overrides + mutate OK", "result": "✓ Node + override"}
     _run_test(collector, stage, "9.36", "add_node(NodeBlueprint) applies + overrides", t_9_36)
 
     # -----------------------------------------------------------------------

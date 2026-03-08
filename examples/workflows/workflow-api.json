@@ -15,7 +15,7 @@
   "9": {
     "class_type": "SaveImage",
     "inputs": {
-      "filename_prefix": "AutoGraph/400/image",
+      "filename_prefix": "Autograph/logo",
       "images": [
         "8",
         0
@@ -87,7 +87,7 @@
         "3068": "3d-struct",
         "2343": "hand-sketch",
         "1041": "bold A-carabiner",
-        "24": "teal-glass"
+        "700": "original"
       }
     }
   }
