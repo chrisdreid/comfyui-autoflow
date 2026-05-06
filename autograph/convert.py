@@ -1251,6 +1251,13 @@ def _fits_widget_spec(value: Any, spec: Any) -> bool:
     if not isinstance(spec, list) or not spec:
         return True
     head = spec[0]
+    opts = spec[1] if len(spec) >= 2 and isinstance(spec[1], dict) else {}
+    if (
+        isinstance(value, str)
+        and isinstance(opts, dict)
+        and any(opts.get(flag) is True for flag in ("image_upload", "video_upload", "audio_upload", "file_upload", "text_upload"))
+    ):
+        return True
     if isinstance(head, (list, tuple)):
         try:
             return value in head

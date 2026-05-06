@@ -420,4 +420,35 @@ def run(collector: ResultCollector, **kwargs) -> None:
         }
     _run_test(collector, stage, "4.32", "convert_workflow skips MarkdownNote", t_4_32)
 
+    def t_4_33():
+        workflow = {
+            "last_node_id": 1,
+            "last_link_id": 0,
+            "nodes": [
+                {
+                    "id": 1,
+                    "type": "LoadImage",
+                    "mode": 0,
+                    "inputs": [],
+                    "outputs": [],
+                    "widgets_values": ["src.jpeg", "image"],
+                }
+            ],
+            "links": [],
+        }
+        node_info = {
+            "LoadImage": {
+                "input": {
+                    "required": {
+                        "image": [["example.png"], {"image_upload": True}],
+                    }
+                }
+            }
+        }
+        api = convert_workflow(workflow, node_info=node_info, server_url=None)
+        image = api["1"]["inputs"].get("image")
+        assert image == "src.jpeg", f"Expected LoadImage.image to survive conversion, got {image!r}"
+        return {"input": "LoadImage widgets_values=['src.jpeg', 'image']", "output": image, "result": "✓ upload filename preserved"}
+    _run_test(collector, stage, "4.33", "LoadImage upload filename survives stale node_info choices", t_4_33)
+
     _print_stage_summary(collector, stage)
