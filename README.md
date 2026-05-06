@@ -1,4 +1,4 @@
-﻿<!-- Keep version below in sync with autograph/version.py -->
+<!-- Keep version below in sync with autograph/version.py -->
 ```text
                       $$\                                                      $$\       
                       $$ |                                                     $$ |      
@@ -11,7 +11,7 @@ $$  __$$ |$$ |  $$ |  $$ |$$\ $$ |  $$ |$$ |  $$ |$$ |     $$  __$$ |$$ |  $$ |$
                                         $$\   $$ |                   $$ |                
                                         \$$$$$$  |                   $$ |                
                                          \______/                    \__|                
-ComfyUI                                                                      version: 2.1.0
+ComfyUI                                                                      version: 2.2.0
 ```
 
 [![PyPI version](https://img.shields.io/pypi/v/comfyui-autograph?color=blue)](https://pypi.org/project/comfyui-autograph/)
@@ -269,7 +269,7 @@ with open("output.png", "rb") as f:
 All `.load()` methods accept: `dict`, `bytes`, `str` (JSON or path), `Path`
 
 ## Submit + images (optional)
- Submit your `ApiFlow` directly to ComfyUI and get images back
+ Submit your `ApiFlow` directly to ComfyUI and get files back
 ```mermaid
 flowchart LR
   apiFlow["ApiFlow"] ==> submit["submit(wait=True)"]
@@ -287,6 +287,19 @@ api.saveimage.inputs.filename_prefix='autograph'
 res = api.submit(server_url="http://localhost:8188", wait=True)
 images = res.fetch_images()
 images.save("outputs/frame.###.png")
+```
+
+Upload input assets with friendly templates instead of raw MIME strings:
+
+```python
+# api
+from autograph import upload_file
+
+uploaded = upload_file("src.jpeg", server_url="http://localhost:8188", accept="image")
+api.LoadImage.image = uploaded.path
+
+upload_file("voice.wav", server_url="http://localhost:8188", accept="audio")
+upload_file("clip.mp4", server_url="http://localhost:8188", accept="video")
 ```
 
 You can also set an output default with env `AUTOGRAPH_OUTPUT_PATH` and then just provide a `filename=` template:

@@ -1654,6 +1654,34 @@ class ApiFlow(dict):
         out_path.write_text(self.to_json(indent=indent, ensure_ascii=ensure_ascii), encoding="utf-8")
         return out_path
 
+    def upload_file(
+        self,
+        path: Union[str, Path],
+        server_url: Optional[str] = None,
+        *,
+        node: Optional[Union[str, int, NodeProxy]] = None,
+        input_name: str = "image",
+        patch: bool = True,
+        **kwargs: Any,
+    ):
+        from .net import FileUploadResult, upload_file
+
+        uploaded = upload_file(path, server_url=server_url, **kwargs)
+        if not patch:
+            return uploaded
+        if not isinstance(uploaded, FileUploadResult):
+            if len(uploaded) == 1:
+                uploaded = uploaded[0]
+            else:
+                raise ValueError("Cannot patch a workflow node from a directory upload with multiple files.")
+        file_path = uploaded.path
+        if not file_path:
+            raise ValueError("ComfyUI upload response did not include a file name.")
+
+        target = self._resolve_upload_api_node(node)
+        target.setdefault("inputs", {})[input_name] = file_path
+        return uploaded
+
     def upload_image(
         self,
         path: Union[str, Path],
@@ -1664,23 +1692,23 @@ class ApiFlow(dict):
         patch: bool = True,
         **kwargs: Any,
     ):
-        from .net import ImageUploadResult, upload_image
+        from .net import ImageUploadResult, ImageUploadResults
 
-        uploaded = upload_image(path, server_url=server_url, **kwargs)
-        if not patch:
-            return uploaded
-        if not isinstance(uploaded, ImageUploadResult):
-            if len(uploaded) == 1:
-                uploaded = uploaded[0]
-            else:
-                raise ValueError("Cannot patch a LoadImage node from a directory upload with multiple images.")
-        image_path = uploaded.path
-        if not image_path:
-            raise ValueError("ComfyUI upload response did not include an image filename.")
-
-        target = self._resolve_upload_api_node(node)
-        target.setdefault("inputs", {})[input_name] = image_path
-        return uploaded
+        if "image_type" in kwargs and "file_type" not in kwargs:
+            kwargs["file_type"] = kwargs.pop("image_type")
+        kwargs.pop("accept", None)
+        uploaded = self.upload_file(
+            path,
+            server_url=server_url,
+            node=node,
+            input_name=input_name,
+            patch=patch,
+            accept="image",
+            **kwargs,
+        )
+        if isinstance(uploaded, list):
+            return ImageUploadResults(ImageUploadResult(item) for item in uploaded)
+        return ImageUploadResult(uploaded)
 
     def _resolve_upload_api_node(self, node: Optional[Union[str, int, NodeProxy]]) -> Dict[str, Any]:
         if node is None:
@@ -2127,6 +2155,34 @@ class Flow(dict):
             out.data = mapped if isinstance(mapped, ApiFlow) else ApiFlow(mapped, node_info=out.data.node_info, use_api=out.data.use_api, workflow_meta=out.data.workflow_meta)  # type: ignore[attr-defined]
         return out
 
+    def upload_file(
+        self,
+        path: Union[str, Path],
+        server_url: Optional[str] = None,
+        *,
+        node: Optional[Union[int, FlowNodeProxy]] = None,
+        input_name: str = "image",
+        patch: bool = True,
+        **kwargs: Any,
+    ):
+        from .net import FileUploadResult, upload_file
+
+        uploaded = upload_file(path, server_url=server_url, **kwargs)
+        if not patch:
+            return uploaded
+        if not isinstance(uploaded, FileUploadResult):
+            if len(uploaded) == 1:
+                uploaded = uploaded[0]
+            else:
+                raise ValueError("Cannot patch a workflow node from a directory upload with multiple files.")
+        file_path = uploaded.path
+        if not file_path:
+            raise ValueError("ComfyUI upload response did not include a file name.")
+
+        target = self._resolve_upload_flow_node(node)
+        self._set_flow_widget_value(target, input_name, file_path)
+        return uploaded
+
     def upload_image(
         self,
         path: Union[str, Path],
@@ -2137,23 +2193,23 @@ class Flow(dict):
         patch: bool = True,
         **kwargs: Any,
     ):
-        from .net import ImageUploadResult, upload_image
+        from .net import ImageUploadResult, ImageUploadResults
 
-        uploaded = upload_image(path, server_url=server_url, **kwargs)
-        if not patch:
-            return uploaded
-        if not isinstance(uploaded, ImageUploadResult):
-            if len(uploaded) == 1:
-                uploaded = uploaded[0]
-            else:
-                raise ValueError("Cannot patch a LoadImage node from a directory upload with multiple images.")
-        image_path = uploaded.path
-        if not image_path:
-            raise ValueError("ComfyUI upload response did not include an image filename.")
-
-        target = self._resolve_upload_flow_node(node)
-        self._set_flow_widget_value(target, input_name, image_path)
-        return uploaded
+        if "image_type" in kwargs and "file_type" not in kwargs:
+            kwargs["file_type"] = kwargs.pop("image_type")
+        kwargs.pop("accept", None)
+        uploaded = self.upload_file(
+            path,
+            server_url=server_url,
+            node=node,
+            input_name=input_name,
+            patch=patch,
+            accept="image",
+            **kwargs,
+        )
+        if isinstance(uploaded, list):
+            return ImageUploadResults(ImageUploadResult(item) for item in uploaded)
+        return ImageUploadResult(uploaded)
 
     def _resolve_upload_flow_node(self, node: Optional[Union[int, FlowNodeProxy]]) -> Dict[str, Any]:
         if node is None:

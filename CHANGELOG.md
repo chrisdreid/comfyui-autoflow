@@ -5,14 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] - 2026-05-06
+## [2.2.0] - 2026-05-06
 
 ### Added
-- **Input image uploads** — added `autograph.upload_image()` for uploading image files or directories to ComfyUI's `/upload/image` endpoint.
-- **Flow and ApiFlow upload helpers** — added `Flow.upload_image()` and `ApiFlow.upload_image()` convenience methods that upload a single image and patch an unambiguous `LoadImage.image` value.
-- **Directory uploads** — `upload_image()` accepts directories, filters common image extensions, and preserves relative subdirectories under the optional `subfolder` argument.
-- **Upload result wrappers** — added `ImageUploadResult` and `ImageUploadResults` with `.path` and `.paths()` helpers for values suitable for `LoadImage`.
-- Documentation examples for uploading input images before submission.
+- **Input file uploads** — added `autograph.upload_file()` for uploading image, audio, video, text, archive, model, or arbitrary files to ComfyUI's upload endpoint with friendly `accept` templates.
+- **Flow and ApiFlow upload helpers** — added `Flow.upload_file()` and `ApiFlow.upload_file()` convenience methods that upload a single file and patch a workflow input value.
+- **Directory uploads** — `upload_file()` accepts directories, filters by friendly templates such as `accept="image"` or `accept=["audio", "video"]`, and preserves relative subdirectories under the optional `subfolder` argument.
+- **Upload result wrappers** — added `FileUploadResult` and `FileUploadResults` with `.path`, `.paths()`, `.kind`, and `.mime_type` helpers for values suitable for ComfyUI file inputs.
+- **Image upload compatibility** — kept `upload_image()`, `Flow.upload_image()`, `ApiFlow.upload_image()`, `ImageUploadResult`, and `ImageUploadResults` as image-specific wrappers.
+- Documentation examples for uploading input files before submission.
 
 ### Fixed
 - **`LoadImage.image` conversion with stale node info** — upload-backed widgets such as `image_upload` now accept arbitrary string filenames instead of treating the server's current choices list as exhaustive. This prevents values like `"src.jpeg"` from becoming `None` during workflow conversion.

@@ -1,4 +1,4 @@
-# Submit + images
+# Submit + files
 
 ## Note for ComfyUI Node Developers
 
@@ -21,15 +21,15 @@ These become:
 
 ## Overview
 
-Once you have an `ApiFlow`, submit it to ComfyUI and fetch images.
+Once you have an `ApiFlow`, submit it to ComfyUI and fetch files.
 
 ```mermaid
 flowchart LR
   apiFlow["ApiFlow"] --> submitFn["ApiFlow.submit()"]
   submitFn --> comfyServer["ComfyUI server"]
-  submitFn --> getImages["SubmissionResult.fetch_images()"]
-  getImages --> images["ImagesResult"]
-  images --> saveImages["save(...)"]
+  submitFn --> getFiles["SubmissionResult.fetch_files()"]
+  getFiles --> files["FilesResult"]
+  files --> saveFiles["save(...)"]
 ```
 
 ## Submit (no waiting)
@@ -51,22 +51,30 @@ res = api.submit(server_url="http://localhost:8188", wait=False)
 print(res.prompt_id)  # job handle
 ```
 
-## Upload input images
+## Upload input files
 
-`LoadImage` stores a ComfyUI input filename; it does not upload bytes by itself.
-Upload local images explicitly before submitting, then set or patch the `LoadImage.image`
+ComfyUI load nodes store input filenames; they do not upload bytes by themselves.
+Upload local files explicitly before submitting, then set or patch the relevant input
 value.
 
 ```python
 # api
-from autograph import ApiFlow, upload_image
+from autograph import ApiFlow, upload_file
 
 api = ApiFlow("workflow.json", node_info="node-info.json")
 
-uploaded = upload_image("src.jpeg", server_url="http://localhost:8188", overwrite=True)
+uploaded = upload_file("src.jpeg", server_url="http://localhost:8188", accept="image", overwrite=True)
 api.LoadImage.image = uploaded.path
 
 res = api.submit(server_url="http://localhost:8188", wait=True)
+```
+
+`accept` uses friendly templates, so callers do not need to know MIME strings:
+
+```python
+upload_file("voice.wav", server_url="http://localhost:8188", accept="audio")
+upload_file("clip.mp4", server_url="http://localhost:8188", accept="video")
+upload_file("mesh.glb", server_url="http://localhost:8188", accept=["model", ".glb"])
 ```
 
 `Flow` and `ApiFlow` also provide convenience methods. For a single unambiguous
@@ -74,16 +82,19 @@ res = api.submit(server_url="http://localhost:8188", wait=True)
 
 ```python
 api = ApiFlow("workflow.json", node_info="node-info.json")
-api.upload_image("src.jpeg", server_url="http://localhost:8188", overwrite=True)
+api.upload_file("src.jpeg", server_url="http://localhost:8188", accept="image", overwrite=True)
 ```
 
 Directories are supported too; relative subdirectories are preserved under the
-optional `subfolder` argument:
+optional `subfolder` argument. Use `accept` to filter a directory by media kind:
 
 ```python
-uploads = upload_image("inputs/faces", server_url="http://localhost:8188", subfolder="faces")
+uploads = upload_file("inputs/faces", server_url="http://localhost:8188", accept="image", subfolder="faces")
 print(uploads.paths())
 ```
+
+`upload_image()` remains available as a compatibility wrapper for image-only
+callers.
 
 ```bash
 # cli

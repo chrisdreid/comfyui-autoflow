@@ -32,7 +32,7 @@ def run(collector: ResultCollector, **kwargs) -> None:
     print(f"  {stage}")
     print(f"{'='*60}\n")
 
-    from autograph import Flow, ApiFlow, convert_with_errors, upload_image
+    from autograph import Flow, ApiFlow, convert_with_errors, upload_file, upload_image
     from autograph.api import convert_workflow, _sanitize_api_prompt
 
     wf_path = str(_BUNDLED_WORKFLOW)
@@ -482,8 +482,10 @@ def run(collector: ResultCollector, **kwargs) -> None:
             img.write_bytes(b"fake image bytes")
             try:
                 net.urllib.request.urlopen = fake_urlopen
-                uploaded = upload_image(img, server_url="http://comfy.example", subfolder="faces", overwrite=True)
+                uploaded = upload_file(img, server_url="http://comfy.example", subfolder="faces", overwrite=True)
                 assert uploaded.path == "faces/src.jpeg"
+                assert uploaded.kind == "image"
+                assert uploaded.mime_type == "image/jpeg"
                 assert requests[-1][0] == "http://comfy.example/upload/image"
                 assert b'name="overwrite"\r\n\r\ntrue' in requests[-1][1]
 
@@ -502,10 +504,16 @@ def run(collector: ResultCollector, **kwargs) -> None:
                 )
                 flow.upload_image(img, server_url="http://comfy.example")
                 assert flow.unwrap()["nodes"][0]["widgets_values"][0] == "src.jpeg"
+
+                audio = Path(td) / "voice.wav"
+                audio.write_bytes(b"fake audio bytes")
+                uploaded_audio = upload_file(audio, server_url="http://comfy.example", accept="audio")
+                assert uploaded_audio.kind == "audio"
+                assert uploaded_audio.mime_type in ("audio/x-wav", "audio/wav")
             finally:
                 net.urllib.request.urlopen = old_urlopen
 
-        return {"input": "upload_image(src.jpeg) + ApiFlow/Flow helpers", "output": "src.jpeg", "result": "✓ upload helpers patch LoadImage"}
-    _run_test(collector, stage, "4.34", "upload_image helpers upload and patch LoadImage", t_4_34)
+        return {"input": "upload_file(src.jpeg) + ApiFlow/Flow helpers", "output": "src.jpeg", "result": "✓ upload helpers patch LoadImage"}
+    _run_test(collector, stage, "4.34", "upload_file helpers upload and patch LoadImage", t_4_34)
 
     _print_stage_summary(collector, stage)

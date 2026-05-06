@@ -303,6 +303,9 @@ class ApiFlow(_MappingWrapper):
     def submit(self, *args: Any, **kwargs: Any):
         return self._api.submit(*args, **kwargs)
 
+    def upload_file(self, *args: Any, **kwargs: Any):
+        return self._api.upload_file(*args, **kwargs)
+
     def upload_image(self, *args: Any, **kwargs: Any):
         return self._api.upload_image(*args, **kwargs)
 
@@ -693,6 +696,9 @@ class Flow(_MappingWrapper):
 
     def convert_with_errors(self, *args: Any, **kwargs: Any):
         return self._flow.convert_with_errors(*args, **kwargs)
+
+    def upload_file(self, *args: Any, **kwargs: Any):
+        return self._flow.upload_file(*args, **kwargs)
 
     def upload_image(self, *args: Any, **kwargs: Any):
         return self._flow.upload_image(*args, **kwargs)
