@@ -1654,6 +1654,47 @@ class ApiFlow(dict):
         out_path.write_text(self.to_json(indent=indent, ensure_ascii=ensure_ascii), encoding="utf-8")
         return out_path
 
+    def upload_image(
+        self,
+        path: Union[str, Path],
+        server_url: Optional[str] = None,
+        *,
+        node: Optional[Union[str, int, NodeProxy]] = None,
+        input_name: str = "image",
+        patch: bool = True,
+        **kwargs: Any,
+    ):
+        from .net import ImageUploadResult, upload_image
+
+        uploaded = upload_image(path, server_url=server_url, **kwargs)
+        if not patch:
+            return uploaded
+        if not isinstance(uploaded, ImageUploadResult):
+            if len(uploaded) == 1:
+                uploaded = uploaded[0]
+            else:
+                raise ValueError("Cannot patch a LoadImage node from a directory upload with multiple images.")
+        image_path = uploaded.path
+        if not image_path:
+            raise ValueError("ComfyUI upload response did not include an image filename.")
+
+        target = self._resolve_upload_api_node(node)
+        target.setdefault("inputs", {})[input_name] = image_path
+        return uploaded
+
+    def _resolve_upload_api_node(self, node: Optional[Union[str, int, NodeProxy]]) -> Dict[str, Any]:
+        if node is None:
+            matches = [n for n in self.values() if isinstance(n, dict) and n.get("class_type") == "LoadImage"]
+            if len(matches) != 1:
+                raise ValueError(f"Expected exactly one LoadImage node to patch, found {len(matches)}. Pass node=.")
+            return matches[0]
+        if isinstance(node, NodeProxy):
+            return node.node
+        target = self[str(node)]
+        if not isinstance(target, dict):
+            raise ValueError(f"Node {node!r} is not a dict node.")
+        return target
+
     def submit(
         self,
         server_url: Optional[str] = None,
@@ -2085,6 +2126,65 @@ class Flow(dict):
             mapped = api_mapping(out.data, map_callbacks, in_place=False)
             out.data = mapped if isinstance(mapped, ApiFlow) else ApiFlow(mapped, node_info=out.data.node_info, use_api=out.data.use_api, workflow_meta=out.data.workflow_meta)  # type: ignore[attr-defined]
         return out
+
+    def upload_image(
+        self,
+        path: Union[str, Path],
+        server_url: Optional[str] = None,
+        *,
+        node: Optional[Union[int, FlowNodeProxy]] = None,
+        input_name: str = "image",
+        patch: bool = True,
+        **kwargs: Any,
+    ):
+        from .net import ImageUploadResult, upload_image
+
+        uploaded = upload_image(path, server_url=server_url, **kwargs)
+        if not patch:
+            return uploaded
+        if not isinstance(uploaded, ImageUploadResult):
+            if len(uploaded) == 1:
+                uploaded = uploaded[0]
+            else:
+                raise ValueError("Cannot patch a LoadImage node from a directory upload with multiple images.")
+        image_path = uploaded.path
+        if not image_path:
+            raise ValueError("ComfyUI upload response did not include an image filename.")
+
+        target = self._resolve_upload_flow_node(node)
+        self._set_flow_widget_value(target, input_name, image_path)
+        return uploaded
+
+    def _resolve_upload_flow_node(self, node: Optional[Union[int, FlowNodeProxy]]) -> Dict[str, Any]:
+        if node is None:
+            matches = [n for n in self.get("nodes", []) if isinstance(n, dict) and n.get("type") == "LoadImage"]
+            if len(matches) != 1:
+                raise ValueError(f"Expected exactly one LoadImage node to patch, found {len(matches)}. Pass node=.")
+            return matches[0]
+        if isinstance(node, FlowNodeProxy):
+            return node.node
+        for candidate in self.get("nodes", []):
+            if isinstance(candidate, dict) and candidate.get("id") == int(node):
+                return candidate
+        raise KeyError(node)
+
+    def _set_flow_widget_value(self, node: Dict[str, Any], input_name: str, value: Any) -> None:
+        widget_index = 0
+        node_info = getattr(self, "node_info", None)
+        if isinstance(node_info, dict):
+            try:
+                widget_names = get_widget_input_names(str(node.get("type", "")), node_info=node_info, use_api=True)
+                if input_name in widget_names:
+                    widget_index = widget_names.index(input_name)
+            except Exception:
+                widget_index = 0
+        widgets = node.get("widgets_values")
+        if not isinstance(widgets, list):
+            widgets = []
+        while len(widgets) <= widget_index:
+            widgets.append(None)
+        widgets[widget_index] = value
+        node["widgets_values"] = widgets
 
     def submit(
         self,

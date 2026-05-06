@@ -74,7 +74,14 @@ from .defaults import (  # noqa: F401
     DEFAULT_OUTPUT_PATH,
     DEFAULT_SUBMIT_CLIENT_ID,
 )
-from .net import http_json, comfy_url, resolve_comfy_server_url  # noqa: F401
+from .net import (  # noqa: F401
+    ImageUploadResult,
+    ImageUploadResults,
+    http_json,
+    comfy_url,
+    resolve_comfy_server_url,
+    upload_image,
+)
 from .pngmeta import (  # noqa: F401
     parse_png_metadata_from_bytes,
     extract_png_comfyui_metadata,
@@ -100,6 +107,8 @@ __all__ = [
     "FileResult",
     "ImagesResult",
     "ImageResult",
+    "ImageUploadResult",
+    "ImageUploadResults",
     "DictView",
     # conversion + errors
     "WorkflowConverterError",
@@ -130,6 +139,7 @@ __all__ = [
     "http_json",
     "comfy_url",
     "resolve_comfy_server_url",
+    "upload_image",
     "parse_png_metadata_from_bytes",
     "extract_png_comfyui_metadata",
     "looks_like_json",

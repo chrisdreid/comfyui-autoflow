@@ -32,7 +32,7 @@ def run(collector: ResultCollector, **kwargs) -> None:
     print(f"  {stage}")
     print(f"{'='*60}\n")
 
-    from autograph import Flow, ApiFlow, convert_with_errors
+    from autograph import Flow, ApiFlow, convert_with_errors, upload_image
     from autograph.api import convert_workflow, _sanitize_api_prompt
 
     wf_path = str(_BUNDLED_WORKFLOW)
@@ -450,5 +450,62 @@ def run(collector: ResultCollector, **kwargs) -> None:
         assert image == "src.jpeg", f"Expected LoadImage.image to survive conversion, got {image!r}"
         return {"input": "LoadImage widgets_values=['src.jpeg', 'image']", "output": image, "result": "✓ upload filename preserved"}
     _run_test(collector, stage, "4.33", "LoadImage upload filename survives stale node_info choices", t_4_33)
+
+    def t_4_34():
+        import autograph.net as net
+
+        old_urlopen = net.urllib.request.urlopen
+        requests = []
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self.payload
+
+        def fake_urlopen(req, timeout):
+            body = req.data or b""
+            requests.append((req.full_url, body, timeout))
+            subfolder = "faces" if b"\r\n\r\nfaces\r\n" in body else ""
+            payload = json.dumps({"name": "src.jpeg", "subfolder": subfolder, "type": "input"}).encode("utf-8")
+            return FakeResponse(payload)
+
+        with tempfile.TemporaryDirectory() as td:
+            img = Path(td) / "src.jpeg"
+            img.write_bytes(b"fake image bytes")
+            try:
+                net.urllib.request.urlopen = fake_urlopen
+                uploaded = upload_image(img, server_url="http://comfy.example", subfolder="faces", overwrite=True)
+                assert uploaded.path == "faces/src.jpeg"
+                assert requests[-1][0] == "http://comfy.example/upload/image"
+                assert b'name="overwrite"\r\n\r\ntrue' in requests[-1][1]
+
+                api = ApiFlow({"1": {"class_type": "LoadImage", "inputs": {}}})
+                api.upload_image(img, server_url="http://comfy.example")
+                assert api.unwrap()["1"]["inputs"]["image"] == "src.jpeg"
+
+                flow = Flow(
+                    {
+                        "last_node_id": 1,
+                        "last_link_id": 0,
+                        "nodes": [{"id": 1, "type": "LoadImage", "inputs": [], "outputs": [], "widgets_values": []}],
+                        "links": [],
+                    },
+                    node_info={"LoadImage": {"input": {"required": {"image": [["example.png"], {"image_upload": True}]}}}},
+                )
+                flow.upload_image(img, server_url="http://comfy.example")
+                assert flow.unwrap()["nodes"][0]["widgets_values"][0] == "src.jpeg"
+            finally:
+                net.urllib.request.urlopen = old_urlopen
+
+        return {"input": "upload_image(src.jpeg) + ApiFlow/Flow helpers", "output": "src.jpeg", "result": "✓ upload helpers patch LoadImage"}
+    _run_test(collector, stage, "4.34", "upload_image helpers upload and patch LoadImage", t_4_34)
 
     _print_stage_summary(collector, stage)

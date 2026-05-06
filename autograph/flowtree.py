@@ -302,6 +302,9 @@ class ApiFlow(_MappingWrapper):
     def submit(self, *args: Any, **kwargs: Any):
         return self._api.submit(*args, **kwargs)
 
+    def upload_image(self, *args: Any, **kwargs: Any):
+        return self._api.upload_image(*args, **kwargs)
+
     def execute(
         self,
         *,
@@ -689,6 +692,9 @@ class Flow(_MappingWrapper):
 
     def convert_with_errors(self, *args: Any, **kwargs: Any):
         return self._flow.convert_with_errors(*args, **kwargs)
+
+    def upload_image(self, *args: Any, **kwargs: Any):
+        return self._flow.upload_image(*args, **kwargs)
 
     def submit(self, *args: Any, embed_workflow: bool = True, **kwargs: Any):
         """Submit this flow to ComfyUI for rendering.
