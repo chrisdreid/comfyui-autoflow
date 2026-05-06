@@ -27,6 +27,7 @@ from .defaults import (
     DEFAULT_WAIT_TIMEOUT_S,
 )
 from .defaults import DEFAULT_JSON_ENSURE_ASCII, DEFAULT_JSON_INDENT
+from .pngmeta import looks_like_json
 
 
 def _wrap(v: Any, *, path: str) -> "Tree":
@@ -639,7 +640,7 @@ class Flow(_MappingWrapper):
         self._flow = f
         self._data = f
         # Track file path for save() with no args
-        if isinstance(x, (str, Path)):
+        if isinstance(x, Path) or (isinstance(x, str) and not looks_like_json(x)):
             xp = Path(x)
             if xp.exists() and xp.is_file():
                 self._filepath = xp.resolve()

@@ -298,6 +298,8 @@ def run(collector: ResultCollector, **kwargs) -> None:
     def t_5_30():
         api2 = ApiFlow(wf_path, node_info=BUILTIN_NODE_INFO)
         raw = copy.deepcopy(dict(api2.unwrap()))
+        first_node = next(n for n in raw.values() if isinstance(n, dict) and isinstance(n.get("inputs"), dict))
+        first_node["inputs"]["_AUTOGRAPH_test_literal"] = "Default"
         spec = {"replacements": {"literal": {"Default": "MAPPED"}}}
         result = map_strings(raw, spec)
         j = json.dumps(result)
@@ -320,6 +322,8 @@ def run(collector: ResultCollector, **kwargs) -> None:
     def t_5_32():
         api2 = ApiFlow(wf_path, node_info=BUILTIN_NODE_INFO)
         raw = copy.deepcopy(dict(api2.unwrap()))
+        first_node = next(n for n in raw.values() if isinstance(n, dict) and isinstance(n.get("inputs"), dict))
+        first_node["inputs"]["_AUTOGRAPH_test_literal"] = "Default"
         os.environ["_AF_TEST_MAP"] = "env_expanded"
         try:
             spec = {"replacements": {"literal": {"Default": "$_AF_TEST_MAP"}}, "expand_env": True}
