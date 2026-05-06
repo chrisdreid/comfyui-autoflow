@@ -1,4 +1,4 @@
-﻿# Submit + images
+# Submit + images
 
 ## Note for ComfyUI Node Developers
 
@@ -49,6 +49,40 @@ from autograph import ApiFlow
 api = ApiFlow("workflow.json")
 res = api.submit(server_url="http://localhost:8188", wait=False)
 print(res.prompt_id)  # job handle
+```
+
+## Upload input images
+
+`LoadImage` stores a ComfyUI input filename; it does not upload bytes by itself.
+Upload local images explicitly before submitting, then set or patch the `LoadImage.image`
+value.
+
+```python
+# api
+from autograph import ApiFlow, upload_image
+
+api = ApiFlow("workflow.json", node_info="node-info.json")
+
+uploaded = upload_image("src.jpeg", server_url="http://localhost:8188", overwrite=True)
+api.LoadImage.image = uploaded.path
+
+res = api.submit(server_url="http://localhost:8188", wait=True)
+```
+
+`Flow` and `ApiFlow` also provide convenience methods. For a single unambiguous
+`LoadImage` node, they upload and patch the node in one call:
+
+```python
+api = ApiFlow("workflow.json", node_info="node-info.json")
+api.upload_image("src.jpeg", server_url="http://localhost:8188", overwrite=True)
+```
+
+Directories are supported too; relative subdirectories are preserved under the
+optional `subfolder` argument:
+
+```python
+uploads = upload_image("inputs/faces", server_url="http://localhost:8188", subfolder="faces")
+print(uploads.paths())
 ```
 
 ```bash
