@@ -29,8 +29,11 @@ from .results import (  # noqa: F401
     ImageResult,
 )
 from .net import (  # noqa: F401
+    FileUploadResult,
+    FileUploadResults,
     ImageUploadResult,
     ImageUploadResults,
+    upload_file,
     upload_image,
 )
 from .convert import (  # noqa: F401
@@ -62,8 +65,11 @@ __all__ = [
     "SubmissionResult",
     "ImagesResult",
     "ImageResult",
+    "FileUploadResult",
+    "FileUploadResults",
     "ImageUploadResult",
     "ImageUploadResults",
+    "upload_file",
     "upload_image",
     "WorkflowConverterError",
     "NodeInfoError",
