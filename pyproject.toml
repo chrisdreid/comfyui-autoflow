@@ -34,6 +34,7 @@ keywords = [
 
 [project.optional-dependencies]
 pillow = ["pillow"]
+mcp = ["mcp>=1.7.1"]
 
 [project.urls]
 Homepage = "https://github.com/chrisdreid/comfyui-autograph"
@@ -43,6 +44,7 @@ Issues = "https://github.com/chrisdreid/comfyui-autograph/issues"
 
 [project.scripts]
 autograph = "autograph.cli:main"
+comfyui-autograph-mcp = "autograph.mcp.__main__:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "autograph.version.__version__"}

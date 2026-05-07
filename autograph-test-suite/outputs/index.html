@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>autograph Test Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 2rem; line-height: 1.6; }
+  h1 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
+  h2 { color: #8b949e; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+  h3 { color: #58a6ff; margin: 0.5rem 0; font-size: 0.95em; }
+
+  /* Summary stats */
+  .summary { display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+  .stat { padding: 1rem 1.5rem; border-radius: 8px; text-align: center; min-width: 100px; }
+  .stat-label { font-size: 0.8em; color: #8b949e; }
+  .stat-value { font-size: 2em; font-weight: bold; }
+  .pass { background: #2d501622; border: 1px solid #2d5016; }
+  .pass .stat-value { color: #3fb950; }
+  .fail { background: #8b1a1a22; border: 1px solid #8b1a1a; }
+  .fail .stat-value { color: #f85149; }
+  .skip { background: #4a4a0022; border: 1px solid #4a4a00; }
+  .skip .stat-value { color: #d29922; }
+  .error { background: #8b451322; border: 1px solid #8b4513; }
+  .error .stat-value { color: #db6d28; }
+  .overall { padding: 1rem; border-radius: 8px; background: #2d501644; border: 2px solid #2d5016; margin-bottom: 1rem; text-align: center; font-size: 1.2em; }
+  .env-info { color: #8b949e; font-size: 0.9em; margin-bottom: 1rem; }
+  .env-info strong { color: #c9d1d9; }
+
+  /* Collapsible env panel */
+  .env-panel { margin-bottom: 1rem; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }
+  .env-summary { padding: 0.75rem 1rem; background: #161b22; cursor: pointer; color: #8b949e; font-size: 0.9em; user-select: none; display: flex; align-items: center; gap: 0.5rem; list-style: none; }
+  .env-summary::-webkit-details-marker { display: none; }
+  .env-summary::before { content: '▶'; font-size: 0.7em; color: #484f58; transition: transform 0.2s; display: inline-block; }
+  .env-panel[open] .env-summary::before { transform: rotate(90deg); }
+  .env-summary strong { color: #c9d1d9; }
+  .env-summary:hover { background: #1c2128; }
+  .env-grid { display: flex; flex-direction: column; padding: 0; background: #0d1117; }
+  .env-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1.25rem; border-top: 1px solid #21262d; font-size: 0.88em; }
+  .env-key { color: #8b949e; min-width: 150px; }
+  .env-val { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.9em; }
+  .env-ok { color: #3fb950; }
+  .env-missing { color: #f85149; }
+
+  /* Preview (mermaid, dot) */
+  .detail-preview { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 0.5rem; overflow-x: auto; }
+  .detail-preview .mermaid { background: transparent; }
+
+  /* Stage sections */
+  .stage-section { margin-bottom: 1rem; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }
+  .stage-header { background: #161b22; margin: 0; padding: 0.75rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; user-select: none; font-size: 1em; }
+  .stage-header:hover { background: #1c2128; }
+  .stage-count { margin-left: auto; font-size: 0.85em; color: #8b949e; }
+  .stage-toggle { font-size: 0.7em; color: #484f58; transition: transform 0.2s; }
+  .stage-body { padding: 0; }
+  .stage-body.collapsed { display: none; }
+
+  /* Test table */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #21262d; }
+  th { background: #0d1117; color: #8b949e; font-weight: 600; font-size: 0.85em; }
+  pre { color: #f0f0f0; margin: 0; }
+  .id-col { font-family: monospace; font-size: 0.85em; color: #8b949e; }
+  .arrow-col { text-align: center; color: #484f58; font-size: 0.8em; transition: transform 0.2s; }
+
+  /* Expandable rows */
+  .expandable { cursor: pointer; }
+  .expandable:hover { background: #161b2244 !important; }
+  .expandable:hover .arrow-col { color: #58a6ff; }
+  .detail-row td { padding: 0; background: #161b22; }
+  .detail-content { padding: 0.75rem 1rem 0.75rem 4rem; border-left: 3px solid #58a6ff; animation: slideDown 0.15s ease-out; }
+  @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 500px; } }
+
+  .detail-desc { color: #c9d1d9; margin-bottom: 0.5rem; font-size: 0.9em; }
+  .detail-io { display: flex; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .io-box { background: #21262d; border-radius: 6px; padding: 0.4rem 0.75rem; font-size: 0.85em; flex: 1; min-width: 200px; }
+  .io-label { display: inline-block; background: #30363d; color: #58a6ff; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75em; font-weight: 600; margin-right: 0.5rem; letter-spacing: 0.05em; }
+  .io-result { color: #3fb950; }
+  .detail-code { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; }
+  .detail-code pre { font-size: 0.85em; color: #79c0ff; white-space: pre-wrap; word-break: break-word; }
+  .detail-msg { margin-top: 0.5rem; }
+  .detail-msg pre { font-size: 0.8em; color: #f85149; white-space: pre-wrap; word-break: break-word; }
+
+  /* Fixture cards */
+  .fixture-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.5rem; margin-top: 1.5rem; }
+  .fixture-card h2 { margin-top: 0; color: #c9d1d9; }
+
+  /* Image comparison */
+  .image-comparison { display: flex; gap: 2rem; margin: 1rem 0; flex-wrap: wrap; }
+  .image-col { flex: 1; min-width: 280px; }
+  .image-col img { max-width: 100%; border-radius: 8px; border: 1px solid #30363d; cursor: pointer; transition: transform 0.2s; }
+  .image-col img:hover { transform: scale(1.02); box-shadow: 0 0 20px rgba(88,166,255,0.3); }
+  .img-link { display: block; margin-bottom: 0.5rem; }
+  .img-label { font-size: 0.8em; color: #8b949e; display: block; margin-bottom: 1rem; }
+  .no-image-placeholder { border: 2px dashed #30363d; border-radius: 8px; padding: 3rem 2rem; text-align: center; color: #484f58; min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .no-image-placeholder p { margin: 0.25rem 0; }
+
+  /* Progress */
+  .progress-info { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+  .progress-bar { background: #21262d; border-radius: 4px; height: 8px; margin-top: 0.5rem; overflow: hidden; }
+  .progress-fill { background: linear-gradient(90deg, #3fb950, #58a6ff); height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .progress-timeline { display: flex; gap: 2px; margin-top: 0.5rem; flex-wrap: wrap; }
+  .timeline-step { position: relative; }
+  .timeline-dot { display: inline-block; width: 6px; height: 6px; background: #3fb950; border-radius: 50%; }
+  .timeline-step:hover .timeline-dot { background: #58a6ff; transform: scale(1.5); }
+
+  /* Events log */
+  .events-log { margin-top: 0.75rem; }
+  .events-log summary { cursor: pointer; color: #8b949e; font-size: 0.85em; }
+  .events-log summary:hover { color: #58a6ff; }
+  .events-pre { max-height: 300px; overflow-y: auto; font-size: 0.75em; padding: 0.5rem; background: #0d1117; border: 1px solid #21262d; border-radius: 4px; }
+
+  /* Lightbox */
+  .lightbox { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 1000; align-items: center; justify-content: center; cursor: pointer; }
+  .lightbox.active { display: flex; }
+  .lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>🧪 autograph Test Dashboard</h1>
+<div class="overall">🎉 ALL TESTS PASSED</div>
+<details class="env-panel">
+<summary class="env-summary"><strong>Version:</strong> 2.2.0 &nbsp;|&nbsp; <strong>Python:</strong> 3.12.3 &nbsp;|&nbsp; <strong>OS:</strong> linux &nbsp;|&nbsp; <strong>Date:</strong> 2026-05-07 00:03:29 &nbsp;|&nbsp; <strong>Total:</strong> 2 tests</summary>
+<div class="env-grid">
+<div class="env-row"><span class="env-key">🐍 Python</span><span class="env-val env-ok">3.12.3</span></div>
+<div class="env-row"><span class="env-key">📦 pip</span><span class="env-val env-missing">not set</span></div>
+<div class="env-row"><span class="env-key">🖼️ PIL/Pillow</span><span class="env-val env-ok">✓ available</span></div>
+<div class="env-row"><span class="env-key">🌐 ComfyUI Server</span><span class="env-val env-missing">not set</span></div>
+<div class="env-row"><span class="env-key">🖥️ ComfyUI Modules</span><span class="env-val env-missing">not set</span></div>
+<div class="env-row"><span class="env-key">🎬 ffmpeg</span><span class="env-val env-ok">/usr/bin/ffmpeg</span></div>
+<div class="env-row"><span class="env-key">🪄 magick</span><span class="env-val env-ok">/usr/bin/convert</span></div>
+<div class="env-row"><span class="env-key">📁 Fixtures</span><span class="env-val env-missing">not set</span></div>
+<div class="env-row"><span class="env-key">📂 Output</span><span class="env-val env-ok">/home/chris/dev/git-repos/comfyui-autograph/autograph-test-suite/outputs</span></div>
+</div>
+</details>
+
+
+<div class="summary">
+  <div class="stat pass"><div class="stat-value">2</div><div class="stat-label">Passed</div></div>
+  <div class="stat fail"><div class="stat-value">0</div><div class="stat-label">Failed</div></div>
+  <div class="stat error"><div class="stat-value">0</div><div class="stat-label">Errors</div></div>
+  <div class="stat skip"><div class="stat-value">0</div><div class="stat-label">Skipped</div></div>
+</div>
+
+
+    <div class="stage-section">
+        <h2 class="stage-header" onclick="toggleStage(this)">
+            ✅ Phase 10: MCP server
+            <span class="stage-count">2/2</span>
+            <span class="stage-toggle">▼</span>
+        </h2>
+        <div class="stage-body">
+            <table>
+            <thead><tr><th style="width:60px">ID</th><th>Test</th><th style="width:70px">Status</th><th style="width:70px">Time</th><th style="width:30px"></th></tr></thead>
+            <tbody>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">10.1</td>
+                <td>✅ core import does not load mcp</td>
+                <td><strong>PASS</strong></td>
+                <td>0.102s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> import autograph (subprocess)</div><div class="io-box"><span class="io-label">OUTPUT</span> no mcp.* modules in sys.modules</div><div class="io-box"><span class="io-label io-result">RESULT</span> OK</div></div></div>
+                </td>
+            </tr>
+            <tr style="background: #2d501622;" class="expandable" onclick="toggleDetail(this)" title="">
+                <td class="id-col">10.2</td>
+                <td>✅ mcp extra installed</td>
+                <td><strong>PASS</strong></td>
+                <td>0.000s</td>
+                <td class="arrow-col">▶</td>
+            </tr>
+            <tr class="detail-row" style="display:none;">
+                <td colspan="5">
+                    <div class="detail-content"><div class="detail-io"><div class="io-box"><span class="io-label">INPUT</span> import mcp</div><div class="io-box"><span class="io-label">OUTPUT</span> mcp not installed</div><div class="io-box"><span class="io-label io-result">RESULT</span> SKIP — install with `pip install &quot;comfyui-autograph[mcp]&quot;`</div></div></div>
+                </td>
+            </tr></tbody>
+            </table>
+        </div>
+    </div>
+
+
+
+<div id="lightbox" class="lightbox" onclick="this.classList.remove('active')">
+  <img id="lightbox-img" src="" alt="Full resolution" />
+</div>
+
+<script>
+// Toggle detail row
+function toggleDetail(row) {
+  const detail = row.nextElementSibling;
+  if (detail && detail.classList.contains('detail-row')) {
+    const arrow = row.querySelector('.arrow-col');
+    if (detail.style.display === 'none') {
+      detail.style.display = 'table-row';
+      if (arrow) arrow.textContent = '▼';
+    } else {
+      detail.style.display = 'none';
+      if (arrow) arrow.textContent = '▶';
+    }
+  }
+}
+
+// Toggle stage collapse
+function toggleStage(header) {
+  const body = header.nextElementSibling;
+  const toggle = header.querySelector('.stage-toggle');
+  if (body) {
+    body.classList.toggle('collapsed');
+    if (toggle) toggle.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+  }
+}
+
+// Lightbox for images
+document.querySelectorAll('.image-col img').forEach(img => {
+  img.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const lb = document.getElementById('lightbox');
+    const lbImg = document.getElementById('lightbox-img');
+    lbImg.src = this.parentElement.href || this.src;
+    lb.classList.add('active');
+  });
+});
+
+// Auto-expand failed tests
+document.querySelectorAll('.expandable').forEach(row => {
+  const statusCell = row.querySelector('td:nth-child(3) strong');
+  if (statusCell && (statusCell.textContent === 'FAIL' || statusCell.textContent === 'ERROR')) {
+    toggleDetail(row);
+  }
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+
+<p style="color:#484f58;margin-top:2rem;font-size:0.85em;">Generated by autograph test suite — click any test row for details</p>
+</body>
+</html>

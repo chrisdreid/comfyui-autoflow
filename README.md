@@ -98,6 +98,23 @@ pip install comfyui-autograph
 ```
 
 Then use with `python -m autograph ...` or `import autograph` from Python.
+
+> **Optional:** want to drive ComfyUI from Claude Desktop, Claude Code, Cursor,
+> VS Code, Continue, or Zed? Install the [MCP](docs/mcp.md) extra:
+>
+> ```bash
+> # one-shot via uv (no global install)
+> uvx --from "comfyui-autograph[mcp]" comfyui-autograph-mcp
+>
+> # or pip-installed
+> pip install "comfyui-autograph[mcp]"
+> comfyui-autograph-mcp
+> ```
+>
+> See [`docs/mcp.md`](docs/mcp.md) and [`examples/mcp/`](examples/mcp/) for IDE
+> setup snippets. The core library remains zero-dependency; MCP deps only land
+> when you opt in. (`[mcp]` requires Python 3.10+.)
+
 - Optional: set `AUTOGRAPH_COMFYUI_SERVER_URL` once (then `server_url` / `--server-url` become optional):
   - Linux/macOS: `export AUTOGRAPH_COMFYUI_SERVER_URL="http://localhost:8188"`
   - Windows PowerShell: `$env:AUTOGRAPH_COMFYUI_SERVER_URL = "http://localhost:8188"`

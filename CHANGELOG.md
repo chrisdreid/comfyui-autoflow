@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **MCP server (optional)** — ships an opt-in Model Context Protocol server as a new `autograph.mcp` subpackage so any MCP-capable IDE (Claude Desktop, Claude Code, Cursor, VS Code, Continue, Zed) can drive ComfyUI through natural-language tool calls. Install with `pip install "comfyui-autograph[mcp]"` and run via the new `comfyui-autograph-mcp` console script (or `python -m autograph.mcp`).
+- **15 curated MCP tools** wrapping the autograph API: `comfyui_status`, `list_node_types`, `describe_node_type`, `list_models`, `inspect_workflow`, `convert_workflow`, `validate_workflow`, `set_workflow_values`, `run_workflow`, `queue_workflow`, `get_history`, `interrupt`, `upload_file`, `fetch_outputs`, `list_outputs`. Plus three resources (`comfyui://node-info`, `comfyui://history/{prompt_id}`, `comfyui://outputs/{prompt_id}/{filename}`) and two prompts (`text_to_image`, `diagnose_workflow`).
+- **Inline image return policy** — `run_workflow` and `fetch_outputs` return generated images inline as base64 (so the LLM can see them) up to per-image and per-call caps configurable via `AUTOGRAPH_MCP_MAX_INLINE_IMAGE_BYTES` / `AUTOGRAPH_MCP_MAX_INLINE_IMAGES`; oversized or numerous outputs fall back to file paths and `comfyui://` resource URIs.
+- IDE drop-in JSON snippets in [`examples/mcp/`](examples/mcp/) and a [`docs/mcp.md`](docs/mcp.md) reference. The core `comfyui-autograph` package remains zero-dependency; only the `[mcp]` extra pulls in `mcp>=1.7.1` (which itself requires Python 3.10+).
+
 ## [2.2.0] - 2026-05-06
 
 ### Added

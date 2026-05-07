@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "comfyui-autograph": {
+      "command": "uvx",
+      "args": ["--from", "comfyui-autograph[mcp]", "comfyui-autograph-mcp"],
+      "env": {
+        "AUTOGRAPH_COMFYUI_SERVER_URL": "http://127.0.0.1:8188"
+      }
+    }
+  }
+}
