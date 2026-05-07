@@ -906,6 +906,7 @@ def _materialize_submission(
         wait=True,
         output_path=output_path,
         include_bytes=bool(inline_images),
+        overwrite=True,
     )
 
     cap_count = max_inline if isinstance(max_inline, int) else config.max_inline_images
