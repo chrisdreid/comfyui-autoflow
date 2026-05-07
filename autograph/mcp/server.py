@@ -115,9 +115,10 @@ def build_server(
     def inspect_workflow(
         workflow: Optional[Union[str, Dict[str, Any]]] = None,
         workflow_id: Optional[str] = None,
+        brief: bool = False,
     ) -> Dict[str, Any]:
-        """Summarize a workflow's nodes, link counts, and node_info source. Pass `workflow_id` for an active session, or `workflow` (path/JSON/dict) to inspect inline."""
-        return _tools.inspect_workflow(cfg, sessions, workflow=workflow, workflow_id=workflow_id)
+        """Summarize a workflow's nodes with their input/output connectivity. `brief=True` returns a compact [{id, type, title, inputs:[{name,type,connected}], outputs:[{name,type,consumers}]}] list — fast and sufficient for most planning. Full mode (default) adds widget values and wiring details. Pass `workflow_id` for an active session, or `workflow` (path/JSON/dict) to inspect inline."""
+        return _tools.inspect_workflow(cfg, sessions, workflow=workflow, workflow_id=workflow_id, brief=brief)
 
     @mcp.tool()
     def convert_workflow(

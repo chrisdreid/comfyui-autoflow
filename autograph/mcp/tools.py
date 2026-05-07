@@ -13,9 +13,10 @@ string / dict) *or* a ``workflow_id`` from the live :class:`SessionStore`.
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import autograph
 from autograph.net import comfy_url, http_json, upload_file as _upload_file
@@ -30,6 +31,35 @@ from .session import SessionStore, WorkflowSession, resolve_flow
 
 
 WorkflowInput = Union[str, Dict[str, Any]]
+
+_NODE_INFO_CACHE_PATH = Path.home() / ".comfyui-autograph" / "node_info_cache.json"
+
+
+def _fetch_node_info_with_cache(
+    config: "McpConfig",
+    base: str,
+) -> Tuple["autograph.NodeInfo", bool]:
+    """Fetch NodeInfo from the live server, falling back to a disk cache.
+
+    Returns ``(node_info, from_cache)`` where ``from_cache`` is True when the
+    server was unreachable and the result came from the local snapshot.
+    """
+    try:
+        ni = autograph.NodeInfo.fetch(server_url=base, timeout=config.timeout_s)
+        try:
+            _NODE_INFO_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _NODE_INFO_CACHE_PATH.write_text(
+                json.dumps({"fetched_at": time.time(), "data": dict(ni)})
+            )
+        except Exception:
+            pass
+        return ni, False
+    except Exception as fetch_exc:
+        try:
+            cached = json.loads(_NODE_INFO_CACHE_PATH.read_text())
+            return autograph.NodeInfo(cached.get("data", cached)), True
+        except Exception:
+            raise fetch_exc
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +121,54 @@ def _node_summary(node: Any) -> Dict[str, Any]:
         wv = raw.get("widgets_values")
         if isinstance(wv, list):
             summary["widgets_values"] = wv
+    return summary
+
+
+def _brief_node_summary(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact node summary showing input/output connectivity state."""
+    node_id = str(raw.get("id", ""))
+    class_type = raw.get("type") or raw.get("class_type", "")
+    title = raw.get("title") or ""
+
+    inputs_raw = raw.get("inputs")
+    outputs_raw = raw.get("outputs")
+
+    inputs: List[Dict[str, Any]] = []
+    if isinstance(inputs_raw, list):
+        for inp in inputs_raw:
+            if not isinstance(inp, dict):
+                continue
+            inputs.append({
+                "name": inp.get("name"),
+                "type": inp.get("type", "*"),
+                "connected": inp.get("link") is not None,
+            })
+    elif isinstance(inputs_raw, dict):
+        # API format: values are either link refs [node_id, slot] or widget values
+        for name, val in inputs_raw.items():
+            is_link = isinstance(val, list) and len(val) == 2 and isinstance(val[0], (str, int))
+            inputs.append({"name": name, "type": "*", "connected": is_link})
+
+    outputs: List[Dict[str, Any]] = []
+    if isinstance(outputs_raw, list):
+        for out in outputs_raw:
+            if not isinstance(out, dict):
+                continue
+            links = out.get("links") or []
+            outputs.append({
+                "name": out.get("name"),
+                "type": out.get("type", "*"),
+                "consumers": len(links),
+            })
+
+    summary: Dict[str, Any] = {"id": node_id, "type": class_type, "title": title}
+    if inputs:
+        summary["inputs"] = inputs
+    if outputs:
+        summary["outputs"] = outputs
+    widgets = raw.get("widgets_values")
+    if isinstance(widgets, list):
+        summary["widgets_values"] = widgets
     return summary
 
 
@@ -158,7 +236,7 @@ def list_node_types(
     server_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
-    ni = autograph.NodeInfo.fetch(server_url=base, timeout=config.timeout_s)
+    ni, from_cache = _fetch_node_info_with_cache(config, base)
     matches = ni.find(q=query) if query else None
     out: List[Dict[str, Any]] = []
     if matches is None:
@@ -197,7 +275,7 @@ def list_node_types(
             )
             if len(out) >= max(1, limit):
                 break
-    return {"server_url": base, "count": len(out), "node_types": out}
+    return {"server_url": base, "from_cache": from_cache, "count": len(out), "node_types": out}
 
 
 def describe_node_type(
@@ -206,13 +284,13 @@ def describe_node_type(
     server_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
-    ni = autograph.NodeInfo.fetch(server_url=base, timeout=config.timeout_s)
+    ni, from_cache = _fetch_node_info_with_cache(config, base)
     if class_type in ni:
-        return {"class_type": class_type, "definition": dict(ni[class_type])}
+        return {"class_type": class_type, "from_cache": from_cache, "definition": dict(ni[class_type])}
     target = class_type.lower()
     for k, v in ni.items():
         if isinstance(k, str) and k.lower() == target and isinstance(v, dict):
-            return {"class_type": k, "definition": dict(v)}
+            return {"class_type": k, "from_cache": from_cache, "definition": dict(v)}
     raise KeyError(f"Unknown class_type: {class_type!r}")
 
 
@@ -237,26 +315,35 @@ def inspect_workflow(
     store: SessionStore,
     workflow: Optional[WorkflowInput] = None,
     workflow_id: Optional[str] = None,
+    brief: bool = False,
 ) -> Dict[str, Any]:
     flow = _flow_from(store, workflow, workflow_id)
+    raw_flow = flow._flow if hasattr(flow, "_flow") else (dict(flow) if isinstance(flow, dict) else {})
+    raw_nodes = raw_flow.get("nodes", []) if isinstance(raw_flow, dict) else []
+
     nodes: List[Dict[str, Any]] = []
-    try:
-        for n in flow.nodes:
-            nodes.append(_node_summary(n))
-    except Exception:
-        raw = flow._flow if hasattr(flow, "_flow") else dict(flow)
-        for n in raw.get("nodes", []) or []:
+    if brief:
+        for n in raw_nodes:
             if isinstance(n, dict):
-                nodes.append(
-                    {
-                        "id": str(n.get("id", "")),
-                        "class_type": n.get("type") or n.get("class_type", ""),
-                        "title": n.get("title") or "",
-                        "widgets_values": n.get("widgets_values"),
-                    }
-                )
+                nodes.append(_brief_node_summary(n))
+    else:
+        try:
+            for n in flow.nodes:
+                nodes.append(_node_summary(n))
+        except Exception:
+            for n in raw_nodes:
+                if isinstance(n, dict):
+                    nodes.append(
+                        {
+                            "id": str(n.get("id", "")),
+                            "class_type": n.get("type") or n.get("class_type", ""),
+                            "title": n.get("title") or "",
+                            "widgets_values": n.get("widgets_values"),
+                        }
+                    )
     return {
         "workflow_id": workflow_id,
+        "brief": brief,
         **_flow_summary(flow),
         "nodes": nodes,
     }
@@ -461,7 +548,18 @@ def add_node(
     session = store.get(workflow_id)
     flow = session.flow
     overrides = dict(inputs or {})
-    node_ref = flow.add_node(class_type, **overrides)
+    try:
+        node_ref = flow.add_node(class_type, **overrides)
+    except Exception as exc:
+        msg = str(exc)
+        if "node_info" in msg.lower() or "nodeinfo" in msg.lower():
+            raise type(exc)(
+                f"{msg}. The ComfyUI server must be reachable for add_node. "
+                f"Alternatively, use merge_workflow with a workspace-format "
+                f"fragment ({{nodes:[{{id:1,type:'{class_type}',...}}],links:[],last_node_id:1,last_link_id:0}}) "
+                f"which works without a live server."
+            ) from exc
+        raise
     if title:
         try:
             node_ref._data_ref()["title"] = title
@@ -715,14 +813,26 @@ def run_workflow(
             "errors": _errors.parse_prompt_error(exc),
         }
 
-    payload = _materialize_submission(
-        config,
-        submission,
-        save_to=save_to,
-        inline_images=inline_images,
-        max_inline=max_inline,
-        do_fetch=fetch_outputs,
-    )
+    try:
+        payload = _materialize_submission(
+            config,
+            submission,
+            save_to=save_to,
+            inline_images=inline_images,
+            max_inline=max_inline,
+            do_fetch=fetch_outputs,
+        )
+    except Exception as fetch_exc:
+        payload = {
+            "prompt_id": submission.prompt_id,
+            "server_url": base,
+            "fetch_error": str(fetch_exc),
+            "message": (
+                f"Job completed but output fetch failed. "
+                f"Retry with fetch_outputs(prompt_id='{submission.prompt_id}')."
+            ),
+        }
+
     payload["workflow_id"] = workflow_id
     payload["ok"] = True
 
