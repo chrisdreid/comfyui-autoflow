@@ -504,6 +504,7 @@ class SubmissionResult(dict):
         output_path: Optional[Union[str, Path]] = None,
         include_bytes: bool = False,
         refresh: bool = False,
+        overwrite: bool = False,
     ) -> "FilesResult":
         prompt_id = self.prompt_id
         if not prompt_id:
@@ -586,6 +587,7 @@ class SubmissionResult(dict):
                 timeout=timeout,
                 output_path=output_path,
                 include_bytes=include_bytes,
+                overwrite=overwrite,
             )
             out_items.extend(fetched)
 
@@ -1040,6 +1042,7 @@ def _fetch_files_from_refs(
     timeout: int,
     output_path: Optional[Union[str, Path]],
     include_bytes: bool,
+    overwrite: bool = False,
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     out_dir = Path(output_path) if output_path is not None else None
@@ -1066,7 +1069,7 @@ def _fetch_files_from_refs(
         fobj = FileResult(entry)
         if out_dir is not None:
             fobj["bytes"] = data
-            fobj.save(out_dir)
+            fobj.save(out_dir, overwrite=overwrite)
             if not include_bytes:
                 fobj.pop("bytes", None)
 

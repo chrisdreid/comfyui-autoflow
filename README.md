@@ -63,9 +63,10 @@ Skip the GUI. `autograph` handles the backend so you can automate/pipeline your 
 
 ## Requirements
 
-- Python 3.7+ (dict insertion order preserved)
+- Python 3.7+ for the core library (dict insertion order preserved)
+- Python 3.10+ **only** if you also want the optional [`[mcp]` extra](docs/mcp.md) — its upstream `mcp` SDK requires 3.10+
 - ComfyUI server (optional, for API mode)
-- No additional Python packages required
+- No additional Python packages required for the core library
 
 ## Tested ComfyUI Versions:
 - ComfyUI `0.8.2`
@@ -98,6 +99,27 @@ pip install comfyui-autograph
 ```
 
 Then use with `python -m autograph ...` or `import autograph` from Python.
+
+> **Optional:** want to drive ComfyUI from Claude Desktop, Claude Code, Cursor,
+> VS Code, Continue, or Zed? Install the [MCP](docs/mcp.md) extra:
+>
+> ```bash
+> # one-shot via uv (no global install)
+> uvx --from "comfyui-autograph[mcp]" comfyui-autograph-mcp
+>
+> # or pip-installed
+> pip install "comfyui-autograph[mcp]"
+> comfyui-autograph-mcp
+> ```
+>
+> **Python 3.10+ is required only for the `[mcp]` extra** — the upstream `mcp`
+> SDK declares `Requires-Python: >=3.10`, so pip will refuse the extra on older
+> Pythons. The core `comfyui-autograph` library still works on Python 3.7+ and
+> stays zero-dependency; MCP deps only land when you opt in.
+>
+> See [`docs/mcp.md`](docs/mcp.md) and [`examples/mcp/`](examples/mcp/) for IDE
+> setup snippets.
+
 - Optional: set `AUTOGRAPH_COMFYUI_SERVER_URL` once (then `server_url` / `--server-url` become optional):
   - Linux/macOS: `export AUTOGRAPH_COMFYUI_SERVER_URL="http://localhost:8188"`
   - Windows PowerShell: `$env:AUTOGRAPH_COMFYUI_SERVER_URL = "http://localhost:8188"`

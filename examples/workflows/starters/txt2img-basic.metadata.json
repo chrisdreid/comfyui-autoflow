@@ -1,0 +1,8 @@
+{
+  "name": "txt2img-basic",
+  "title": "Text-to-image (basic)",
+  "description": "Stock CheckpointLoaderSimple → CLIPTextEncode (positive + negative) → KSampler → VAEDecode → SaveImage. A minimal text-to-image pipeline; replace the checkpoint name with one available on your server.",
+  "tags": ["txt2img", "starter", "basic"],
+  "models_required": [],
+  "source": null
+}
