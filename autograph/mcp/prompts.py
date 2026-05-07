@@ -59,3 +59,35 @@ def text_to_image(
 
 def diagnose_workflow() -> str:
     return DIAGNOSE_WORKFLOW_TEMPLATE
+
+
+VIBE_BUILD_TEMPLATE = """\
+Vibe-build a ComfyUI workflow end-to-end without using the GUI.
+
+Goal:
+  {goal}
+
+Workflow plan:
+  1. Confirm the server is reachable: `comfyui_status`. Note the URL.
+  2. Decide where to start:
+     a. If the user has a workflow file, call `load_workflow(source=...)` and remember the returned `workflow_id`.
+     b. Otherwise call `search_local_workflows(query=...)` and `load_local_workflow(name)` to start from a known-good
+        starter, OR `create_workflow()` to build from scratch.
+  3. Read the current graph: `inspect_workflow(workflow_id=...)`. Note class_types, free vs wired inputs, and titles.
+  4. Resolve any unknown nodes: `describe_node_type(class_type)` to learn input/output/widget shapes.
+  5. Edit:
+     a. For widget tweaks (seed, prompt text, model name): `set_workflow_values(workflow_id, updates=[...])`.
+     b. To add capability: prefer `merge_workflow(workflow_id, fragment=...)` if you can find a workflow snippet
+        (online via WebFetch on a `list_workflow_sources` URL, or in `search_local_workflows`). Otherwise build
+        node-by-node with `add_node` + `connect_nodes`.
+     c. To remove or rewire: `remove_node` / `disconnect_input` / `connect_nodes`.
+  6. After every structural change, call `validate_workflow(workflow_id)`. Stop and explain if there are errors.
+  7. Render: `run_workflow(workflow_id, wait=True, fetch_outputs=True)`. If the result has `ok: false`, the `errors`
+     array names the offending node — fix and retry.
+  8. Show the user the inline image(s) and saved file paths. If they like it, suggest `save_workflow(workflow_id, path)`
+     so the design lands on disk.
+"""
+
+
+def vibe_build_workflow(goal: str = "describe what the user wants to render") -> str:
+    return VIBE_BUILD_TEMPLATE.format(goal=goal)

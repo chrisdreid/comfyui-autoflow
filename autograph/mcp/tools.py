@@ -1,8 +1,13 @@
 """Tool implementations for the autograph MCP server.
 
-Every function here is a thin wrapper over the public ``autograph`` API. There is
-no business logic in this module — its job is to translate MCP-friendly arg shapes
-into autograph calls and translate autograph results into JSON-friendly dicts.
+Every function here is a thin wrapper over the public ``autograph`` API plus
+the small set of MCP-specific modules in this package (sessions, graft, errors,
+library). There is no business logic in this module — its job is to translate
+MCP-friendly arg shapes into autograph calls and translate autograph results
+into JSON-friendly dicts.
+
+Tools that take a workflow accept *either* an inline ``workflow`` (path / JSON
+string / dict) *or* a ``workflow_id`` from the live :class:`SessionStore`.
 """
 
 from __future__ import annotations
@@ -16,51 +21,37 @@ import autograph
 from autograph.net import comfy_url, http_json, upload_file as _upload_file
 from autograph.results import SubmissionResult
 
+from . import errors as _errors
+from . import graft as _graft
+from . import library as _library
 from .config import McpConfig
-from .images import build_image_response, guess_mime_type
+from .images import build_image_response
+from .session import SessionStore, WorkflowSession, resolve_flow
 
 
 WorkflowInput = Union[str, Dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
-# Workflow input coercion
+# Workflow input helpers
 # ---------------------------------------------------------------------------
 
 
-def _looks_like_json(s: str) -> bool:
-    if not isinstance(s, str):
-        return False
-    stripped = s.lstrip()
-    return stripped.startswith("{") or stripped.startswith("[")
-
-
-def _coerce_workflow(workflow: WorkflowInput) -> Union[Dict[str, Any], Path]:
-    """Accept a path string, JSON string, or dict and return a value autograph.Flow accepts."""
-    if isinstance(workflow, dict):
-        return workflow
-    if isinstance(workflow, str):
-        if _looks_like_json(workflow):
-            return json.loads(workflow)
-        p = Path(workflow).expanduser()
-        if p.exists() and p.is_file():
-            return p
-        # Treat any other string as JSON (will raise a clearer error than file-not-found).
-        return json.loads(workflow)
-    raise TypeError(
-        f"workflow must be a JSON string, file path, or dict — got {type(workflow).__name__}"
-    )
-
-
-def _flow(workflow: WorkflowInput, *, server_url: Optional[str] = None) -> "autograph.Flow":
-    src = _coerce_workflow(workflow)
-    if server_url:
-        return autograph.Flow(src, server_url=server_url)
-    return autograph.Flow(src)
+def _flow_from(
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
+    *,
+    server_url: Optional[str] = None,
+) -> "autograph.Flow":
+    if workflow_id:
+        return store.get(workflow_id).flow
+    if workflow is None:
+        raise ValueError("Provide either `workflow_id` or `workflow`.")
+    return resolve_flow(store, workflow=workflow, workflow_id=None)
 
 
 def _node_summary(node: Any) -> Dict[str, Any]:
-    """Compact, LLM-friendly view of a NodeRef."""
     raw = node.unwrap() if hasattr(node, "unwrap") else dict(node)
     summary: Dict[str, Any] = {
         "id": getattr(node, "addr", None) or str(raw.get("id", "")),
@@ -80,24 +71,65 @@ def _node_summary(node: Any) -> Dict[str, Any]:
             summary["inputs"] = widgets
         if connections:
             summary["connections"] = connections
-    else:
+    elif isinstance(inputs, list):
+        # Workspace-format inputs are slot dicts.
+        wired: List[Dict[str, Any]] = []
+        free: List[Dict[str, Any]] = []
+        for inp in inputs:
+            if not isinstance(inp, dict):
+                continue
+            entry = {"name": inp.get("name"), "type": inp.get("type", "*")}
+            if inp.get("link") is not None:
+                entry["link"] = inp.get("link")
+                wired.append(entry)
+            else:
+                free.append(entry)
+        if wired:
+            summary["wired_inputs"] = wired
+        if free:
+            summary["free_inputs"] = free
         wv = raw.get("widgets_values")
         if isinstance(wv, list):
             summary["widgets_values"] = wv
     return summary
 
 
-# ---------------------------------------------------------------------------
+def _flow_summary(flow: "autograph.Flow") -> Dict[str, Any]:
+    raw = flow._flow if hasattr(flow, "_flow") else flow
+    nodes_raw = raw.get("nodes", []) if isinstance(raw, dict) else []
+    return {
+        "node_count": len(nodes_raw),
+        "link_count": len(raw.get("links", [])) if isinstance(raw, dict) else 0,
+        "last_node_id": raw.get("last_node_id") if isinstance(raw, dict) else None,
+        "last_link_id": raw.get("last_link_id") if isinstance(raw, dict) else None,
+        "node_info_source": getattr(flow, "source", None),
+    }
+
+
+def _err(e: Any) -> Dict[str, Any]:
+    return {
+        "category": _enum_value(getattr(e, "category", None)),
+        "severity": _enum_value(getattr(e, "severity", None)),
+        "message": getattr(e, "message", str(e)),
+        "node_id": getattr(e, "node_id", None),
+        "details": getattr(e, "details", None),
+    }
+
+
+def _enum_value(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    return getattr(v, "value", str(v))
+
+
+# ===========================================================================
 # Server / introspection
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
 def comfyui_status(config: McpConfig, server_url: Optional[str] = None) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
-    out: Dict[str, Any] = {
-        "server_url": base,
-        "reachable": False,
-    }
+    out: Dict[str, Any] = {"server_url": base, "reachable": False}
     try:
         stats = http_json(comfy_url(base, "/system_stats"), payload=None, timeout=config.timeout_s, method="GET")
         out["reachable"] = True
@@ -127,33 +159,44 @@ def list_node_types(
 ) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
     ni = autograph.NodeInfo.fetch(server_url=base, timeout=config.timeout_s)
-    matches = ni.find(q=query) if query else [
-        # No query: build a minimal entry per node.
-        type("V", (), {"_AUTOGRAPH_addr": k, "_d": v})()
-        for k, v in ni.items()
-        if isinstance(k, str) and isinstance(v, dict)
-    ]
-
+    matches = ni.find(q=query) if query else None
     out: List[Dict[str, Any]] = []
-    for view in matches:
-        addr = getattr(view, "_AUTOGRAPH_addr", None)
-        if isinstance(view, dict):
-            data = view
-        else:
-            data = getattr(view, "_d", None) or ni.get(addr) or {}
-        cat = data.get("category") if isinstance(data, dict) else None
-        if category and isinstance(cat, str) and category.lower() not in cat.lower():
-            continue
-        out.append(
-            {
-                "class_type": addr,
-                "display_name": data.get("display_name") if isinstance(data, dict) else None,
-                "category": cat,
-                "output_node": bool(data.get("output_node")) if isinstance(data, dict) else False,
-            }
-        )
-        if len(out) >= max(1, limit):
-            break
+    if matches is None:
+        for k, v in ni.items():
+            if not isinstance(k, str) or not isinstance(v, dict):
+                continue
+            cat = v.get("category")
+            if category and isinstance(cat, str) and category.lower() not in cat.lower():
+                continue
+            out.append(
+                {
+                    "class_type": k,
+                    "display_name": v.get("display_name"),
+                    "category": cat,
+                    "output_node": bool(v.get("output_node")),
+                }
+            )
+            if len(out) >= max(1, limit):
+                break
+    else:
+        for view in matches:
+            addr = getattr(view, "_AUTOGRAPH_addr", None)
+            data = ni.get(addr) if addr else None
+            if not isinstance(data, dict):
+                continue
+            cat = data.get("category")
+            if category and isinstance(cat, str) and category.lower() not in cat.lower():
+                continue
+            out.append(
+                {
+                    "class_type": addr,
+                    "display_name": data.get("display_name"),
+                    "category": cat,
+                    "output_node": bool(data.get("output_node")),
+                }
+            )
+            if len(out) >= max(1, limit):
+                break
     return {"server_url": base, "count": len(out), "node_types": out}
 
 
@@ -165,12 +208,7 @@ def describe_node_type(
     base = config.resolve_server_url(server_url)
     ni = autograph.NodeInfo.fetch(server_url=base, timeout=config.timeout_s)
     if class_type in ni:
-        data = ni[class_type]
-        return {
-            "class_type": class_type,
-            "definition": dict(data) if isinstance(data, dict) else data,
-        }
-    # Case-insensitive fallback.
+        return {"class_type": class_type, "definition": dict(ni[class_type])}
     target = class_type.lower()
     for k, v in ni.items():
         if isinstance(k, str) and k.lower() == target and isinstance(v, dict):
@@ -189,21 +227,24 @@ def list_models(
     return {"server_url": base, "folder": folder, "data": data}
 
 
-# ---------------------------------------------------------------------------
-# Workflow inspection / editing
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Workflow inspection / editing (read-only & widget patches)
+# ===========================================================================
 
 
-def inspect_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, Any]:
-    flow = _flow(workflow, server_url=config.resolve_server_url())
-    nodes_view = flow.nodes
+def inspect_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    flow = _flow_from(store, workflow, workflow_id)
     nodes: List[Dict[str, Any]] = []
     try:
-        for n in nodes_view:
+        for n in flow.nodes:
             nodes.append(_node_summary(n))
     except Exception:
-        # Fall back to raw iteration over the underlying dict structure.
-        raw = flow.unwrap() if hasattr(flow, "unwrap") else dict(flow)
+        raw = flow._flow if hasattr(flow, "_flow") else dict(flow)
         for n in raw.get("nodes", []) or []:
             if isinstance(n, dict):
                 nodes.append(
@@ -215,14 +256,19 @@ def inspect_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, An
                     }
                 )
     return {
-        "node_count": len(nodes),
+        "workflow_id": workflow_id,
+        **_flow_summary(flow),
         "nodes": nodes,
-        "node_info_source": getattr(flow, "source", None),
     }
 
 
-def convert_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, Any]:
-    flow = _flow(workflow, server_url=config.resolve_server_url())
+def convert_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    flow = _flow_from(store, workflow, workflow_id)
     result = flow.convert_with_errors()
     api_data = None
     if getattr(result, "data", None) is not None:
@@ -231,6 +277,7 @@ def convert_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, An
         except Exception:
             api_data = result.data
     return {
+        "workflow_id": workflow_id,
         "ok": bool(getattr(result, "ok", False)),
         "errors": [_err(e) for e in getattr(result, "errors", []) or []],
         "warnings": [_err(w) for w in getattr(result, "warnings", []) or []],
@@ -241,10 +288,16 @@ def convert_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, An
     }
 
 
-def validate_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, Any]:
-    flow = _flow(workflow, server_url=config.resolve_server_url())
+def validate_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    flow = _flow_from(store, workflow, workflow_id)
     result = flow.convert_with_errors()
     return {
+        "workflow_id": workflow_id,
         "ok": bool(getattr(result, "ok", False)),
         "errors": [_err(e) for e in getattr(result, "errors", []) or []],
         "warnings": [_err(w) for w in getattr(result, "warnings", []) or []],
@@ -253,38 +306,14 @@ def validate_workflow(config: McpConfig, workflow: WorkflowInput) -> Dict[str, A
     }
 
 
-def _err(e: Any) -> Dict[str, Any]:
-    return {
-        "category": _enum_value(getattr(e, "category", None)),
-        "severity": _enum_value(getattr(e, "severity", None)),
-        "message": getattr(e, "message", str(e)),
-        "node_id": getattr(e, "node_id", None),
-        "details": getattr(e, "details", None),
-    }
-
-
-def _enum_value(v: Any) -> Optional[str]:
-    if v is None:
-        return None
-    return getattr(v, "value", str(v))
-
-
 def set_workflow_values(
     config: McpConfig,
-    workflow: WorkflowInput,
+    store: SessionStore,
     updates: List[Dict[str, Any]],
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Apply a list of widget patches to a workflow and return the updated JSON.
-
-    Each ``update`` is a dict matching one or more nodes plus the inputs to set::
-
-        {"node_id": "5", "inputs": {"seed": 42, "steps": 30}}
-        {"class_type": "KSampler", "inputs": {"cfg": 7.5}}
-        {"title": "Positive Prompt", "inputs": {"text": "a cat"}}
-
-    If multiple match keys are given on a single update they are AND-ed.
-    """
-    flow = _flow(workflow, server_url=config.resolve_server_url())
+    flow = _flow_from(store, workflow, workflow_id)
     applied: List[Dict[str, Any]] = []
     if not isinstance(updates, list):
         raise TypeError("updates must be a list of {node_id?, class_type?, title?, inputs} dicts")
@@ -298,9 +327,7 @@ def set_workflow_values(
         node_id = patch.get("node_id")
         class_type = patch.get("class_type")
         title = patch.get("title")
-
-        targets = list(_resolve_targets(flow, node_id=node_id, class_type=class_type, title=title))
-        for t in targets:
+        for t in _resolve_targets(flow, node_id=node_id, class_type=class_type, title=title):
             for k, v in inputs.items():
                 try:
                     setattr(t, k, v)
@@ -325,9 +352,12 @@ def set_workflow_values(
                         }
                     )
 
+    if workflow_id:
+        store.touch(workflow_id)
+        return {"workflow_id": workflow_id, "applied": applied}
     return {
         "applied": applied,
-        "workflow": flow.unwrap() if hasattr(flow, "unwrap") else dict(flow),
+        "workflow": flow._flow if hasattr(flow, "_flow") else dict(flow),
     }
 
 
@@ -338,7 +368,6 @@ def _resolve_targets(
     class_type: Optional[str] = None,
     title: Optional[str] = None,
 ) -> Iterable[Any]:
-    """Yield NodeRef-like targets matching the given criteria."""
     if node_id is not None:
         try:
             return [_by_id(flow, node_id)]
@@ -366,14 +395,302 @@ def _by_id(flow: "autograph.Flow", node_id: Any) -> Any:
     raise KeyError(f"No node with id {node_id!r}")
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Builder API
+# ===========================================================================
+
+
+def load_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    source: Union[str, Dict[str, Any]],
+    label: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Load a workflow into a new session and return its workflow_id."""
+    session = store.load_from(source, label=label)
+    return {
+        "workflow_id": session.id,
+        "label": session.label,
+        "source_path": session.source_path,
+        "checkpoint_path": str(session.checkpoint_path) if session.checkpoint_path else None,
+        **_flow_summary(session.flow),
+    }
+
+
+def create_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    starter: Optional[str] = None,
+    label: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Start a new workflow. With ``starter``, seed it from the local library."""
+    if starter:
+        entry = _library.load_by_name(starter)
+        flow = autograph.Flow(entry.path)
+        session = store.create(flow=flow, source_path=str(entry.path), label=label or entry.title)
+        return {
+            "workflow_id": session.id,
+            "starter": entry.name,
+            "starter_path": str(entry.path),
+            "checkpoint_path": str(session.checkpoint_path) if session.checkpoint_path else None,
+            **_flow_summary(session.flow),
+        }
+    session = store.create(label=label)
+    return {
+        "workflow_id": session.id,
+        "label": session.label,
+        "checkpoint_path": str(session.checkpoint_path) if session.checkpoint_path else None,
+        **_flow_summary(session.flow),
+    }
+
+
+def add_node(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    class_type: str,
+    inputs: Optional[Dict[str, Any]] = None,
+    title: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Append a new node to the active workflow.
+
+    ``inputs`` are widget overrides (the LLM should call ``describe_node_type`` first
+    if it doesn't know what's available). Connection-only inputs are made via
+    ``connect_nodes`` afterwards.
+    """
+    session = store.get(workflow_id)
+    flow = session.flow
+    overrides = dict(inputs or {})
+    node_ref = flow.add_node(class_type, **overrides)
+    if title:
+        try:
+            node_ref._data_ref()["title"] = title
+        except Exception:
+            pass
+    store.touch(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        "node_id": getattr(node_ref, "addr", None),
+        "class_type": class_type,
+        "title": title or "",
+        **_flow_summary(flow),
+    }
+
+
+def connect_nodes(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    from_node: str,
+    to_node: str,
+    to_input: str,
+    from_output: Optional[Union[str, int]] = None,
+) -> Dict[str, Any]:
+    """Wire ``from_node.<from_output>`` into ``to_node.<to_input>``.
+
+    If ``from_output`` is None, autograph picks the unique matching output by type;
+    raises if it's ambiguous.
+    """
+    session = store.get(workflow_id)
+    flow = session.flow
+    src = _by_id(flow, from_node)
+    dst = _by_id(flow, to_node)
+    dst.connect(to_input, src, from_output)
+    store.touch(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        "from": {"node_id": from_node, "from_output": from_output},
+        "to": {"node_id": to_node, "to_input": to_input},
+        "ok": True,
+        **_flow_summary(flow),
+    }
+
+
+def disconnect_input(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    node_id: str,
+    input_name: str,
+) -> Dict[str, Any]:
+    session = store.get(workflow_id)
+    flow = session.flow
+    node = _by_id(flow, node_id)
+    if hasattr(node, "disconnect"):
+        node.disconnect(input_name)
+    else:
+        # Fallback: clear the input slot's link directly.
+        data = node._data_ref()
+        for inp in data.get("inputs", []) or []:
+            if inp.get("name") == input_name:
+                inp["link"] = None
+                break
+    store.touch(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        "node_id": node_id,
+        "input_name": input_name,
+        "ok": True,
+        **_flow_summary(flow),
+    }
+
+
+def remove_node(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    node_id: str,
+) -> Dict[str, Any]:
+    session = store.get(workflow_id)
+    flow = session.flow
+    flow_data = flow._flow
+    target_id = int(node_id) if str(node_id).isdigit() else None
+    nodes = flow_data.get("nodes", []) or []
+    new_nodes = []
+    removed = False
+    for n in nodes:
+        nid = n.get("id") if isinstance(n, dict) else None
+        if (target_id is not None and nid == target_id) or str(nid) == str(node_id):
+            removed = True
+            continue
+        new_nodes.append(n)
+    flow_data["nodes"] = new_nodes
+
+    # Remove every link touching this node and unlink the corresponding slot refs.
+    surviving_links: List[Any] = []
+    dropped_link_ids: set = set()
+    for ln in flow_data.get("links", []) or []:
+        if not isinstance(ln, list) or len(ln) < 6:
+            continue
+        link_id, src, _src_slot, dst, _dst_slot, _typ = ln[:6]
+        if str(src) == str(node_id) or str(dst) == str(node_id) or src == target_id or dst == target_id:
+            dropped_link_ids.add(link_id)
+            continue
+        surviving_links.append(ln)
+    flow_data["links"] = surviving_links
+    if dropped_link_ids:
+        for n in flow_data.get("nodes", []) or []:
+            for inp in n.get("inputs", []) or []:
+                if inp.get("link") in dropped_link_ids:
+                    inp["link"] = None
+            for outp in n.get("outputs", []) or []:
+                outp["links"] = [li for li in (outp.get("links") or []) if li not in dropped_link_ids]
+
+    store.touch(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        "node_id": node_id,
+        "removed": removed,
+        "links_dropped": sorted(dropped_link_ids),
+        **_flow_summary(flow),
+    }
+
+
+def merge_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    fragment: Union[str, Dict[str, Any]],
+    auto_connect: bool = True,
+) -> Dict[str, Any]:
+    """Merge a workflow fragment into the active workflow with auto-stitching."""
+    session = store.get(workflow_id)
+    report = _graft.merge_into_flow(session.flow, fragment, auto_connect=auto_connect)
+    store.touch(workflow_id)
+    return {
+        "workflow_id": workflow_id,
+        **report,
+        **_flow_summary(session.flow),
+    }
+
+
+def save_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    path: Optional[str] = None,
+) -> Dict[str, Any]:
+    target = store.save(workflow_id, path=path)
+    return {"workflow_id": workflow_id, "saved_to": str(target)}
+
+
+def get_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    format: str = "workspace",
+) -> Dict[str, Any]:
+    session = store.get(workflow_id)
+    if format == "api":
+        api = session.flow.convert()
+        data = api._api if hasattr(api, "_api") else dict(api)
+        return {"workflow_id": workflow_id, "format": "api", "workflow": data}
+    raw = session.flow._flow if hasattr(session.flow, "_flow") else dict(session.flow)
+    return {"workflow_id": workflow_id, "format": "workspace", "workflow": raw}
+
+
+def list_sessions(config: McpConfig, store: SessionStore) -> Dict[str, Any]:
+    return {"sessions": store.list()}
+
+
+def close_session(
+    config: McpConfig,
+    store: SessionStore,
+    workflow_id: str,
+    delete_checkpoint: bool = False,
+) -> Dict[str, Any]:
+    return store.close(workflow_id, delete_checkpoint=delete_checkpoint)
+
+
+# ===========================================================================
+# Library / online sources
+# ===========================================================================
+
+
+def list_workflow_sources(config: McpConfig) -> Dict[str, Any]:
+    return {"sources": list(_library.ONLINE_SOURCES)}
+
+
+def search_local_workflows(
+    config: McpConfig,
+    query: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    entries = _library.search(query=query, tags=tags, limit=limit)
+    return {
+        "library_dirs": [str(p) for p in _library.library_dirs()],
+        "count": len(entries),
+        "results": [e.to_dict() for e in entries],
+    }
+
+
+def load_local_workflow(
+    config: McpConfig,
+    store: SessionStore,
+    name: str,
+    label: Optional[str] = None,
+) -> Dict[str, Any]:
+    entry = _library.load_by_name(name)
+    session = store.load_from(entry.path, label=label or entry.title)
+    return {
+        "workflow_id": session.id,
+        "library_entry": entry.to_dict(),
+        "checkpoint_path": str(session.checkpoint_path) if session.checkpoint_path else None,
+        **_flow_summary(session.flow),
+    }
+
+
+# ===========================================================================
 # Execution
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
 def run_workflow(
     config: McpConfig,
-    workflow: WorkflowInput,
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
     wait: bool = True,
     fetch_outputs: bool = True,
     save_to: Optional[str] = None,
@@ -382,14 +699,23 @@ def run_workflow(
     server_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
-    flow = _flow(workflow, server_url=base)
-    submission = flow.submit(
-        server_url=base,
-        wait=wait,
-        fetch_outputs=False,        # we fetch ourselves so we control include_bytes
-        timeout=config.timeout_s,
-    )
-    return _materialize_submission(
+    flow = _flow_from(store, workflow, workflow_id)
+    try:
+        submission = flow.submit(
+            server_url=base,
+            wait=wait,
+            fetch_outputs=False,
+            timeout=config.timeout_s,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "workflow_id": workflow_id,
+            "server_url": base,
+            "errors": _errors.parse_prompt_error(exc),
+        }
+
+    payload = _materialize_submission(
         config,
         submission,
         save_to=save_to,
@@ -397,17 +723,42 @@ def run_workflow(
         max_inline=max_inline,
         do_fetch=fetch_outputs,
     )
+    payload["workflow_id"] = workflow_id
+    payload["ok"] = True
+
+    # Surface execution errors that came back through history.
+    history = submission.get("history") if isinstance(submission, dict) else None
+    if isinstance(history, dict):
+        prompt_id = submission.prompt_id
+        entry = history.get(prompt_id) if prompt_id else None
+        exec_errors = _errors.parse_history_errors(entry)
+        if exec_errors:
+            payload["ok"] = False
+            payload["errors"] = exec_errors
+    return payload
 
 
 def queue_workflow(
     config: McpConfig,
-    workflow: WorkflowInput,
+    store: SessionStore,
+    workflow: Optional[WorkflowInput] = None,
+    workflow_id: Optional[str] = None,
     server_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     base = config.resolve_server_url(server_url)
-    flow = _flow(workflow, server_url=base)
-    submission = flow.submit(server_url=base, wait=False, fetch_outputs=False, timeout=config.timeout_s)
+    flow = _flow_from(store, workflow, workflow_id)
+    try:
+        submission = flow.submit(server_url=base, wait=False, fetch_outputs=False, timeout=config.timeout_s)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "workflow_id": workflow_id,
+            "server_url": base,
+            "errors": _errors.parse_prompt_error(exc),
+        }
     return {
+        "ok": True,
+        "workflow_id": workflow_id,
         "prompt_id": submission.prompt_id,
         "server_url": submission.server_url,
     }
@@ -436,9 +787,9 @@ def interrupt(config: McpConfig, server_url: Optional[str] = None) -> Dict[str, 
         return {"server_url": base, "ok": False, "error": f"HTTP {exc.code}: {exc.reason}"}
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Files / outputs
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
 def upload_file(
@@ -525,9 +876,9 @@ def list_outputs(
     return {"server_url": base, "prompt_id": prompt_id, "outputs": outputs}
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Internals
+# ===========================================================================
 
 
 def _materialize_submission(

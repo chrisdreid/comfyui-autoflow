@@ -9,9 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **MCP server (optional)** — ships an opt-in Model Context Protocol server as a new `autograph.mcp` subpackage so any MCP-capable IDE (Claude Desktop, Claude Code, Cursor, VS Code, Continue, Zed) can drive ComfyUI through natural-language tool calls. Install with `pip install "comfyui-autograph[mcp]"` and run via the new `comfyui-autograph-mcp` console script (or `python -m autograph.mcp`).
-- **15 curated MCP tools** wrapping the autograph API: `comfyui_status`, `list_node_types`, `describe_node_type`, `list_models`, `inspect_workflow`, `convert_workflow`, `validate_workflow`, `set_workflow_values`, `run_workflow`, `queue_workflow`, `get_history`, `interrupt`, `upload_file`, `fetch_outputs`, `list_outputs`. Plus three resources (`comfyui://node-info`, `comfyui://history/{prompt_id}`, `comfyui://outputs/{prompt_id}/{filename}`) and two prompts (`text_to_image`, `diagnose_workflow`).
-- **Inline image return policy** — `run_workflow` and `fetch_outputs` return generated images inline as base64 (so the LLM can see them) up to per-image and per-call caps configurable via `AUTOGRAPH_MCP_MAX_INLINE_IMAGE_BYTES` / `AUTOGRAPH_MCP_MAX_INLINE_IMAGES`; oversized or numerous outputs fall back to file paths and `comfyui://` resource URIs.
-- IDE drop-in JSON snippets in [`examples/mcp/`](examples/mcp/) and a [`docs/mcp.md`](docs/mcp.md) reference. The core `comfyui-autograph` package remains zero-dependency; only the `[mcp]` extra pulls in `mcp>=1.7.1` (which itself requires Python 3.10+).
+- **29 MCP tools** for end-to-end back-end workflow editing:
+  - **Server / introspection (4)**: `comfyui_status`, `list_node_types`, `describe_node_type`, `list_models`.
+  - **Inspection / editing (4)**: `inspect_workflow`, `convert_workflow`, `validate_workflow`, `set_workflow_values` — read-only or session-aware.
+  - **Builder API (9)**: `load_workflow`, `create_workflow`, `add_node`, `connect_nodes`, `disconnect_input`, `remove_node`, `merge_workflow`, `save_workflow`, `get_workflow`.
+  - **Sessions (2)**: `list_sessions`, `close_session`.
+  - **Library + sources (3)**: `list_workflow_sources`, `search_local_workflows`, `load_local_workflow`.
+  - **Execution (4)**: `run_workflow`, `queue_workflow`, `get_history`, `interrupt`.
+  - **Files / outputs (3)**: `upload_file`, `fetch_outputs`, `list_outputs`.
+- **Stateful workflow sessions** with auto-checkpoint to `~/.comfyui-autograph/sessions/<workflow_id>.json` (overridable via `AUTOGRAPH_MCP_SESSION_DIR`) so work-in-progress survives IDE restarts. Editing tools mutate the live session by `workflow_id`; read-only tools also accept inline workflow JSON / file paths.
+- **`merge_workflow` graft engine** — splice a workflow fragment (e.g. JSON the assistant found online) into the active session: renumbers node and link IDs, inserts, detects dangling slots, auto-wires unique-by-type matches against the existing graph, returns a structured report listing connections made plus suggestions for what still needs the LLM's attention. Recognizes "interposer" nodes (same slot type in and out, e.g. `LoraLoader` on `MODEL`) and emits a hint for slotting them into existing paths.
+- **Local workflow library** — `search_local_workflows` and `load_local_workflow` browse `~/.comfyui-autograph/workflows/`, project-local `./.autograph-workflows/`, any colon-separated dirs in `AUTOGRAPH_MCP_LIBRARY_DIRS`, and a bundled `examples/workflows/starters/` set. Optional `*.metadata.json` sidecars carry tags, description, and source.
+- **Curated online sources catalog** — `list_workflow_sources` returns a hand-picked list of public workflow URLs (ComfyUI examples on GitHub, Civitai, OpenArt, GitHub code search, ComfyUI-Manager). The MCP itself never scrapes; the assistant uses its own WebFetch on these.
+- **Structured error feedback** — `run_workflow` and `queue_workflow` parse ComfyUI's `/prompt` 400 bodies and history `execution_error` messages into actionable `[{node_id, class_type, error_type, message, details?}]` arrays so the LLM can iterate without raw stack traces. Failures return `ok: false`.
+- **Inline image return policy** — `run_workflow` and `fetch_outputs` return generated images inline as base64 up to per-image and per-call caps configurable via `AUTOGRAPH_MCP_MAX_INLINE_IMAGE_BYTES` / `AUTOGRAPH_MCP_MAX_INLINE_IMAGES`; oversized or numerous outputs fall back to file paths and `comfyui://outputs/...` resource URIs.
+- **MCP resources** — `comfyui://node-info`, `comfyui://history/{prompt_id}`, `comfyui://outputs/{prompt_id}/{filename}` for browsing without burning tool calls.
+- **Conversation prompt templates** — `text_to_image`, `diagnose_workflow`, and a new `vibe_build_workflow` end-to-end build template.
+- IDE drop-in JSON snippets in [`examples/mcp/`](examples/mcp/) plus a [`docs/mcp.md`](docs/mcp.md) reference. The core `comfyui-autograph` package remains zero-dependency; only the `[mcp]` extra pulls in `mcp>=1.7.1` (which itself requires Python 3.10+).
 
 ## [2.2.0] - 2026-05-06
 

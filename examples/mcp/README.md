@@ -50,29 +50,39 @@ If `AUTOGRAPH_COMFYUI_SERVER_URL` is unset the MCP falls back to
 Every snippet uses the canonical `uvx` command. If you prefer a pip install,
 swap the `command`/`args` for `"command": "comfyui-autograph-mcp", "args": []`.
 
-## Available tools (15)
+## Available tools (29)
 
-| Tool | What it does |
-| --- | --- |
-| `comfyui_status` | Server reachable + queue depth + system stats |
-| `list_node_types` | Search the node catalog |
-| `describe_node_type` | Full input/output/widget spec for one class_type |
-| `list_models` | Checkpoints / loras / vae / etc. |
-| `inspect_workflow` | Summarize a workflow's nodes (file path, JSON, or dict) |
-| `convert_workflow` | Workspace → API format with structured errors |
-| `validate_workflow` | Pre-flight error/warning report |
-| `set_workflow_values` | Bulk-edit widgets by node_id / class_type / title |
-| `run_workflow` | Submit, wait, fetch outputs, return inline images |
-| `queue_workflow` | Fire-and-forget, returns prompt_id |
-| `get_history` | Recent runs (or one by prompt_id) |
-| `interrupt` | Cancel current job |
-| `upload_file` | Upload to ComfyUI input dir (image/audio/video/text/archive/model) |
-| `fetch_outputs` | Retrieve outputs for a past prompt_id |
-| `list_outputs` | Enumerate output files without downloading |
+The MCP is a back-end **workhorse for editing and running** ComfyUI workflows.
+Workflows live in stateful sessions (`workflow_id`) with auto-checkpoints to
+`~/.comfyui-autograph/sessions/`. See
+[`docs/mcp.md`](../../docs/mcp.md) for the full reference.
 
-Plus the resources `comfyui://node-info`, `comfyui://history/{prompt_id}`,
-`comfyui://outputs/{prompt_id}/{filename}` and the prompts `text_to_image` and
-`diagnose_workflow`.
+**Server / introspection (4):** `comfyui_status`, `list_node_types`,
+`describe_node_type`, `list_models`.
+
+**Inspection / editing (4):** `inspect_workflow`, `convert_workflow`,
+`validate_workflow`, `set_workflow_values`.
+
+**Builder API (9):** `load_workflow`, `create_workflow`, `add_node`,
+`connect_nodes`, `disconnect_input`, `remove_node`, `merge_workflow`,
+`save_workflow`, `get_workflow`.
+
+**Sessions (2):** `list_sessions`, `close_session`.
+
+**Library + sources (3):** `list_workflow_sources`, `search_local_workflows`,
+`load_local_workflow`.
+
+**Execution (4):** `run_workflow`, `queue_workflow`, `get_history`, `interrupt`.
+
+**Files / outputs (3):** `upload_file`, `fetch_outputs`, `list_outputs`.
+
+Plus three resources (`comfyui://node-info`, `comfyui://history/{prompt_id}`,
+`comfyui://outputs/{prompt_id}/{filename}`) and three prompts
+(`text_to_image`, `diagnose_workflow`, `vibe_build_workflow`).
+
+The `merge_workflow` tool grafts a workflow snippet (e.g. JSON the assistant
+fetched online) into the active session, renumbering ids and auto-stitching
+unique slot-type matches against the existing graph.
 
 ## Verify it works
 
